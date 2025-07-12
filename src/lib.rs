@@ -416,7 +416,7 @@ pub fn animate<T: FnOnce(&Bone, &mut Bone) + Copy>(
     }
 
     // simulate blending, by injecting last animation data into this one
-    if armature.metadata.last_anim != anim_idx {
+    if false && armature.metadata.last_anim != anim_idx {
         // remove 0th frame keyframe that aren't part of the last animation
         let mut removed = false;
         let mut curr = 0;
