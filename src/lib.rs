@@ -324,30 +324,8 @@ pub struct Prop {
     pub zindex: i32,
 }
 
-/// Animate using time to identify frame.
-/// This is the recommended way to animate.
-/// `should_loop` - Loop animation.
-pub fn animate_by_time<T: FnOnce(&Bone, &mut Bone) + Copy>(
-    armature: &mut Armature,
-    anim_idx: usize,
-    time: Instant,
-    should_loop: bool,
-    speed: f32,
-    after_animate: T,
-    mut last_anim_idx: usize,
-    last_anim_frame: i32,
-) -> (Vec<Bone>, i32) {
-    if last_anim_idx == usize::MAX {
-        last_anim_idx = anim_idx;
-    }
-    // clone the animation, or initialize empty one
-    let mut anim = Animation::default();
-    if anim_idx < armature.animations.len() {
-        anim = armature.animations[anim_idx].clone()
-    } else {
-        anim.keyframes.push(Keyframe::default())
-    }
-
+/// Modify animation based on time, and return the appropriate frame.
+pub fn get_frame_by_time(anim: &mut Animation, time: Instant, speed: f32) -> i32 {
     // modify frames to simulate speeds
     for kf in &mut anim.keyframes {
         kf.frame = (kf.frame as f32 * (1. / speed.abs())) as i32;
@@ -356,29 +334,13 @@ pub fn animate_by_time<T: FnOnce(&Bone, &mut Bone) + Copy>(
     let elapsed = time.elapsed().as_millis() as f32 / 1e3 as f32;
     let frametime = 1. / anim.fps as f32;
     let mut frame = (elapsed / frametime) as i32;
-    let last_frame = anim.keyframes.last().unwrap().frame;
-    if should_loop && last_frame != 0 {
-        frame %= last_frame;
-    }
 
     // reverse animation if speed is negative
     if speed < 0. {
-        frame = last_frame - frame;
+        frame = anim.keyframes.last().unwrap().frame - frame;
     }
 
-    (
-        animate(
-            armature,
-            anim_idx,
-            &mut anim,
-            frame,
-            should_loop,
-            after_animate,
-            last_anim_idx,
-            last_anim_frame,
-        ),
-        frame,
-    )
+    frame
 }
 
 /// Process an animation at the specified frame.
