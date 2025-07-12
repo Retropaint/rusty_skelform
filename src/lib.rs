@@ -351,22 +351,14 @@ pub fn get_frame_by_time(anim: &mut Animation, time: Instant, speed: f32) -> i32
 pub fn animate<T: FnOnce(&Bone, &mut Bone) + Copy>(
     armature: &mut Armature,
     anim_idx: usize,
-    raw_anim: &Animation,
     mut frame: i32,
     should_loop: bool,
     after_animate: T,
     last_anim_idx: usize,
     last_anim_frame: i32,
 ) -> Vec<Bone> {
-    let mut anim = raw_anim.clone();
+    let mut anim = armature.animations[anim_idx].clone();
     let last_frame = anim.keyframes.last().unwrap().frame;
-
-    if frame < 0 {
-        frame = 0;
-    }
-    if frame > last_frame - 1 {
-        frame = last_frame - 1;
-    }
 
     if should_loop && last_frame != 0 {
         frame %= last_frame;
