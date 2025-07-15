@@ -287,7 +287,7 @@ pub struct Metadata {
 #[derive(serde::Deserialize, Clone, Debug)]
 pub struct SkelformRoot {
     pub texture_size: Vec2,
-    pub armatures: Vec<Armature>,
+    pub armature: Armature,
 }
 
 #[derive(serde::Deserialize, Clone, Default, Debug)]
