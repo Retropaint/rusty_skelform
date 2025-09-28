@@ -1,8 +1,4 @@
-use std::{
-    f32::consts::PI,
-    ops::{AddAssign, MulAssign},
-    time::Instant,
-};
+use std::{collections::HashMap, time::Instant};
 
 #[repr(C)]
 #[derive(serde::Deserialize, Clone, Debug)]
@@ -23,124 +19,79 @@ impl Vec2 {
     }
 }
 
-impl MulAssign for Vec2 {
-    fn mul_assign(&mut self, other: Vec2) {
-        self.x *= other.x;
-        self.y *= other.y;
-    }
-}
-
-impl MulAssign<f32> for Vec2 {
-    fn mul_assign(&mut self, other: f32) {
-        self.x *= other;
-        self.y *= other;
-    }
-}
-
-impl std::ops::DivAssign for Vec2 {
-    fn div_assign(&mut self, other: Vec2) {
-        self.x /= other.x;
-        self.y /= other.y;
-    }
-}
-
-impl std::ops::DivAssign<f32> for Vec2 {
-    fn div_assign(&mut self, other: f32) {
-        self.x /= other;
-        self.y /= other;
-    }
-}
-
-impl AddAssign for Vec2 {
-    fn add_assign(&mut self, other: Vec2) {
-        self.x += other.x;
-        self.y += other.y;
-    }
-}
-
-impl std::ops::SubAssign for Vec2 {
-    fn sub_assign(&mut self, other: Vec2) {
-        self.x -= other.x;
-        self.y -= other.y;
-    }
-}
-
-impl std::ops::Add for Vec2 {
-    type Output = Self;
-    #[inline(always)]
-    fn add(self, rhs: Self) -> Self {
-        Self {
-            x: self.x + rhs.x,
-            y: self.y + rhs.y,
+macro_rules! impl_assign_for_vec2 {
+    ($trait:ident, $method:ident, $op:tt) => {
+        impl std::ops::$trait for Vec2 {
+            fn $method(&mut self, other: Vec2) {
+                self.x $op other.x;
+                self.y $op other.y;
+            }
         }
-    }
+    };
 }
 
-impl std::ops::Div for Vec2 {
-    type Output = Self;
-    #[inline(always)]
-    fn div(self, rhs: Self) -> Self {
-        Self {
-            x: self.x / rhs.x,
-            y: self.y / rhs.y,
+macro_rules! impl_assign_f32_for_vec2 {
+    ($trait:ident, $method:ident, $op:tt) => {
+        impl std::ops::$trait<f32> for Vec2 {
+            fn $method(&mut self, other: f32) {
+                self.x $op other;
+                self.y $op other;
+            }
         }
-    }
+    };
 }
 
-impl std::ops::Div<f32> for Vec2 {
-    type Output = Self;
-    #[inline(always)]
-    fn div(self, rhs: f32) -> Self {
-        Self {
-            x: self.x / rhs,
-            y: self.y / rhs,
+macro_rules! impl_for_vec2 {
+    ($trait:ident, $method:ident, $op:tt) => {
+        impl std::ops::$trait for Vec2 {
+            type Output = Self;
+
+            #[inline(always)]
+            fn $method(self, rhs: Self) -> Self {
+                Self {
+                    x: self.x $op rhs.x,
+                    y: self.y $op rhs.y,
+                }
+            }
         }
-    }
+    };
 }
 
-impl std::ops::Mul<f32> for Vec2 {
-    type Output = Self;
-    #[inline(always)]
-    fn mul(self, rhs: f32) -> Self {
-        Self {
-            x: self.x * rhs,
-            y: self.y * rhs,
+macro_rules! impl_f32_for_vec2 {
+    ($trait:ident, $method:ident, $op:tt) => {
+        impl std::ops::$trait<f32> for Vec2 {
+            type Output = Self;
+
+            #[inline(always)]
+            fn $method(self, rhs: f32) -> Self {
+                Self {
+                    x: self.x $op rhs,
+                    y: self.y $op rhs,
+                }
+            }
         }
-    }
+    };
 }
 
-impl std::ops::Mul for Vec2 {
-    type Output = Self;
-    #[inline(always)]
-    fn mul(self, rhs: Vec2) -> Self {
-        Self {
-            x: self.x * rhs.x,
-            y: self.y * rhs.y,
-        }
-    }
-}
+impl_assign_for_vec2!(AddAssign, add_assign, +=);
+impl_assign_for_vec2!(SubAssign, sub_assign, -=);
+impl_assign_for_vec2!(DivAssign, div_assign, /=);
+impl_assign_for_vec2!(MulAssign, mul_assign, *=);
 
-impl std::ops::Sub for Vec2 {
-    type Output = Self;
-    #[inline(always)]
-    fn sub(self, rhs: Self) -> Self {
-        Self {
-            x: self.x - rhs.x,
-            y: self.y - rhs.y,
-        }
-    }
-}
+impl_assign_f32_for_vec2!(AddAssign, add_assign, +=);
+impl_assign_f32_for_vec2!(SubAssign, sub_assign, -=);
+impl_assign_f32_for_vec2!(DivAssign, div_assign, /=);
+impl_assign_f32_for_vec2!(MulAssign, mul_assign, *=);
 
-impl std::ops::Sub<f32> for Vec2 {
-    type Output = Self;
-    #[inline(always)]
-    fn sub(self, rhs: f32) -> Self {
-        Self {
-            x: self.x - rhs,
-            y: self.y - rhs,
-        }
-    }
-}
+impl_for_vec2!(Add, add, +);
+impl_for_vec2!(Sub, sub, -);
+impl_for_vec2!(Mul, mul, *);
+impl_for_vec2!(Div, div, /);
+
+impl_f32_for_vec2!(Add, add, +);
+impl_f32_for_vec2!(Sub, sub, -);
+impl_f32_for_vec2!(Mul, mul, *);
+impl_f32_for_vec2!(Div, div, /);
 
 impl PartialEq for Vec2 {
     fn eq(&self, other: &Vec2) -> bool {
@@ -177,22 +128,33 @@ pub struct Animation {
 #[derive(serde::Deserialize, Clone, Debug, Default)]
 #[rustfmt::skip]
 pub struct Bone {
-    #[serde(default)] pub id: i32,
-    #[serde(default)] pub name: String,
+    #[serde(default)] 
+    pub id: i32,
+    #[serde(default, rename="_name")] 
+    pub name: String,
 
     #[serde(default = "default_neg_one")] 
-    pub parent_id: i32,
+    pub parent_idx: i32,
+    #[serde(default)] 
+    pub style_idxs: Vec<i32>,
     #[serde(default = "default_neg_one")] 
     pub tex_idx: i32,
 
-    #[serde(default)] pub vertices: Vec<Vertex>,
-    #[serde(default)] pub indices: Vec<u32>,
+    #[serde(default)] 
+    pub vertices: Vec<Vertex>,
+    #[serde(default)] 
+    pub indices: Vec<u32>,
 
-    #[serde(default)] pub rot: f32,
-    #[serde(default)] pub scale: Vec2,
-    #[serde(default)] pub pos: Vec2,
-    #[serde(default)] pub pivot: Vec2,
-    #[serde(default)] pub zindex: f32,
+    #[serde(default)] 
+    pub rot: f32,
+    #[serde(default)] 
+    pub scale: Vec2,
+    #[serde(default)] 
+    pub pos: Vec2,
+    #[serde(default)] 
+    pub pivot: Vec2,
+    #[serde(default)] 
+    pub zindex: f32,
 
     /// used to properly offset bone's movement to counteract it's parent
     #[serde(skip)] pub parent_rot: f32,
@@ -246,22 +208,36 @@ pub enum Transition {
 #[rustfmt::skip]
 pub struct AnimField {
     #[serde(default)] pub id: i32,
-
-    // If the next field is related to this, connect is true.
-    //
-    // Example: Color is a vec4 value (RGBA), so the first field
-    // is for RG, while second is for BA. The first field's
-    // connect is true, while the second one's is false as it does not connect
-    // to the field after it.
-    //
-    // This can be chained to have as many even-numbered vecs as possible.
-    #[serde(default)] pub connect: bool,
-
     #[serde(default)] pub value: Vec2,
-
     #[serde(default)] pub transition: Transition,
-
     #[serde(skip)]    pub label_top: f32,
+}
+
+#[derive(serde::Deserialize, Clone, Default, Debug)]
+pub struct Style {
+    #[serde(skip)]
+    pub id: i32,
+    #[serde(default, rename = "_name")]
+    pub name: String,
+    #[serde(skip)]
+    pub active: bool,
+    #[serde(default)]
+    pub textures: Vec<Texture>,
+}
+
+#[derive(serde::Deserialize, Clone, Copy, Default, PartialEq, Debug)]
+pub enum JointConstraint {
+    #[default]
+    None,
+    Clockwise,
+    CounterClockwise,
+}
+
+#[derive(serde::Deserialize, Clone, Debug)]
+pub struct IkFamily {
+    pub constraint: JointConstraint,
+    pub target_idx: i32,
+    pub bone_idxs: Vec<i32>,
 }
 
 #[derive(serde::Deserialize, Clone, Debug, Default)]
@@ -272,7 +248,10 @@ pub struct Armature {
     pub animations: Vec<Animation>,
     #[serde(default)]
     pub textures: Vec<Texture>,
-
+    #[serde(default)]
+    pub styles: Vec<Style>,
+    #[serde(default)]
+    pub ik_families: Vec<IkFamily>,
     #[serde(skip)]
     pub metadata: Metadata,
 }
@@ -296,7 +275,7 @@ pub struct Texture {
     pub offset: Vec2,
     #[serde(default)]
     pub size: Vec2,
-    #[serde(default)]
+    #[serde(default, rename = "_name")]
     pub name: String,
     #[serde(skip)]
     pub pixels: Vec<u8>,
@@ -348,83 +327,17 @@ pub fn get_frame_by_time(anim: &mut Animation, time: Instant, speed: f32) -> i32
 /// `after_animate` is a closure that runs immediately after animations, and before inheritence of a bone's parent properties.
 ///
 /// last_anim idx and frame are used for blending.
-pub fn animate<T: FnOnce(&Bone, &mut Bone) + Copy>(
+pub fn animate(
     armature: &mut Armature,
     anim_idx: usize,
     mut frame: i32,
     should_loop: bool,
-    after_animate: T,
-    last_anim_idx: usize,
-    last_anim_frame: i32,
 ) -> Vec<Bone> {
-    let mut anim = armature.animations[anim_idx].clone();
+    let anim = armature.animations[anim_idx].clone();
     let last_frame = anim.keyframes.last().unwrap().frame;
 
     if should_loop && last_frame != 0 {
         frame %= last_frame;
-    }
-
-    // record last animation, after this one loops
-    if frame == 0 && armature.metadata.last_frame == last_frame - 1 {
-        armature.metadata.last_anim = anim_idx;
-    }
-
-    // simulate blending, by injecting last animation data into this one
-    if false && armature.metadata.last_anim != anim_idx {
-        // remove 0th frame keyframe that aren't part of the last animation
-        let mut removed = false;
-        let mut curr = 0;
-        while removed {
-            if anim.keyframes[curr].frame != 0 {
-                removed = true;
-            }
-            let mut exists = false;
-            for kf in &armature.animations[last_anim_idx].keyframes {
-                if kf.bone_id == anim.keyframes[curr].bone_id {
-                    exists = true;
-                    curr += 1;
-                }
-            }
-            if !exists {
-                anim.keyframes.remove(curr);
-            }
-        }
-
-        // inject last animation's keyframes to this one, but at 0th frame
-        for mut kf in armature.animations[last_anim_idx].keyframes.clone() {
-            if kf.frame != last_anim_frame {
-                continue;
-            }
-            kf.frame = 0;
-            anim.keyframes.insert(0, kf.clone());
-        }
-
-        // get very next keyframe
-        let mut next_frame = 0;
-        while anim.keyframes[next_frame].frame == 0 {
-            next_frame += 1;
-        }
-        next_frame = anim.keyframes[next_frame].frame as usize;
-
-        // add default keyframes for elements that don't exist, so they can be animated
-        for kf in &armature.animations[last_anim_idx].keyframes {
-            let mut already = false;
-            for kf2 in &anim.keyframes {
-                if kf2.frame == next_frame as i32 && kf2.element == kf.element {
-                    already = true;
-                    break;
-                }
-            }
-            if already {
-                continue;
-            }
-
-            let mut new_kf = kf.clone();
-            new_kf.frame = next_frame as i32;
-            new_kf.value = 0.;
-            anim.keyframes.push(new_kf);
-            anim.keyframes.sort_by(|a, b| a.frame.cmp(&b.frame));
-        }
     }
 
     armature.metadata.last_frame = frame;
@@ -454,8 +367,6 @@ pub fn animate<T: FnOnce(&Bone, &mut Bone) + Copy>(
             };
         }
 
-        let og_prop = prop!().clone();
-
         #[rustfmt::skip] {
                 prop!().pos.x   += animate!(AnimElement::PositionX, -1, 0.).0;
                 prop!().pos.y   += animate!(AnimElement::PositionY, -1, 0.).0;
@@ -476,28 +387,101 @@ pub fn animate<T: FnOnce(&Bone, &mut Bone) + Copy>(
             let prev_tex_idx = anim.keyframes[tex_frame].value;
             prop!().tex_idx = prev_tex_idx as i32;
         }
-
-        after_animate(&og_prop, prop!());
-
-        if prop!().parent_id == -1 {
-            continue;
-        }
-
-        // inherit transform from parent
-
-        let parent = find_bone(prop!().parent_id, &props).unwrap().clone();
-        let parent_rot = parent.rot;
-
-        prop!().rot += parent.rot;
-        prop!().scale *= parent.scale;
-        prop!().pos *= parent.scale;
-        prop!().pos = Vec2::new(
-            prop!().pos.x * parent_rot.cos() - prop!().pos.y * parent_rot.sin(),
-            prop!().pos.x * parent_rot.sin() + prop!().pos.y * parent_rot.cos(),
-        );
-        prop!().pos += parent.pos;
     }
     props
+}
+
+pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<i32, f32>) {
+    for b in 0..bones.len() {
+        if bones[b].parent_idx != -1 {
+            let parent = bones[bones[b].parent_idx as usize].clone();
+            let parent_rot = parent.rot;
+
+            bones[b].rot += parent.rot;
+            bones[b].scale *= parent.scale;
+            bones[b].pos *= parent.scale;
+            bones[b].pos = Vec2::new(
+                bones[b].pos.x * parent_rot.cos() - bones[b].pos.y * parent_rot.sin(),
+                bones[b].pos.x * parent_rot.sin() + bones[b].pos.y * parent_rot.cos(),
+            );
+            bones[b].pos += parent.pos;
+        }
+
+        if let Some(ik_rot) = ik_rots.get(&(b as i32)) {
+            bones[b].rot = *ik_rot;
+        }
+    }
+}
+
+pub fn magnitude(vec: Vec2) -> f32 {
+    (vec.x * vec.x + vec.y * vec.y).sqrt()
+}
+
+pub fn normalize(vec: Vec2) -> Vec2 {
+    let mag = magnitude(vec);
+    Vec2::new(vec.x / mag, vec.y / mag)
+}
+
+pub fn inverse_kinematics(bones: &Vec<Bone>, ik_families: &Vec<IkFamily>) -> HashMap<i32, f32> {
+    let mut cbones = bones.clone();
+
+    let mut ik_rot: HashMap<i32, f32> = HashMap::new();
+
+    for family in ik_families {
+        // forward reaching
+        let mut next_pos = cbones[family.target_idx as usize].pos;
+        let mut next_length = 0.;
+        for i in (0..family.bone_idxs.len()).rev() {
+            let bone = &cbones[family.bone_idxs[i] as usize];
+            let mut length = normalize(next_pos - bone.pos) * next_length;
+            if length.x.is_nan() {
+                length = Vec2::new(0., 0.);
+            }
+
+            if i != 0 {
+                let next_bone = &cbones[family.bone_idxs[i - 1] as usize];
+                next_length = magnitude(bone.pos - next_bone.pos);
+            }
+
+            cbones[family.bone_idxs[i] as usize].pos = next_pos - length;
+            next_pos -= length;
+        }
+
+        // backward reaching
+        let mut prev_pos = cbones[family.bone_idxs[0] as usize].pos;
+        let mut prev_length = 0.;
+        for i in 0..family.bone_idxs.len() {
+            let bone = &cbones[family.bone_idxs[i] as usize];
+            let mut length = normalize(prev_pos - bone.pos) * prev_length;
+            if length.x.is_nan() {
+                length = Vec2::new(0., 0.);
+            }
+
+            if i != family.bone_idxs.len() - 1 {
+                let prev_bone = &cbones[family.bone_idxs[i + 1] as usize];
+                prev_length = magnitude(bone.pos - prev_bone.pos);
+            }
+
+            cbones[family.bone_idxs[i] as usize].pos = prev_pos - length;
+            prev_pos -= length;
+        }
+
+        let end_bone = &cbones[*family.bone_idxs.last().unwrap() as usize];
+        let mut tip_pos = end_bone.pos;
+        for i in (0..family.bone_idxs.len()).rev() {
+            if i == family.bone_idxs.len() - 1 {
+                continue;
+            }
+            let dir = tip_pos - cbones[family.bone_idxs[i] as usize].pos;
+            let rot = dir.y.atan2(dir.x);
+            tip_pos = cbones[family.bone_idxs[i] as usize].pos;
+            cbones[family.bone_idxs[i] as usize].rot = rot;
+
+            ik_rot.insert(family.bone_idxs[i], rot);
+        }
+    }
+
+    ik_rot
 }
 
 /// Interpolate an f32 value from the specified keyframe data.
