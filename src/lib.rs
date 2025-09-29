@@ -155,8 +155,6 @@ pub struct Bone {
     #[serde(default)] 
     pub pos: Vec2,
     #[serde(default)] 
-    pub pivot: Vec2,
-    #[serde(default)] 
     pub zindex: f32,
 
     /// used to properly offset bone's movement to counteract it's parent
@@ -173,8 +171,6 @@ pub enum AnimElement {
     Rotation,
     ScaleX,
     ScaleY,
-    PivotX,
-    PivotY,
     Zindex,
     VertPositionX,
     VertPositionY,
@@ -298,28 +294,6 @@ pub struct Texture {
     pub pixels: Vec<u8>,
 }
 
-/// Returned from animate(), providing all animation data of a single bone (and then some) in a single frame.
-#[derive(Clone)]
-pub struct Prop {
-    pub name: String,
-    pub parent_id: i32,
-
-    pub tex_idx: i32,
-
-    /// Bone transforms
-    pub pos: Vec2,
-    pub scale: Vec2,
-    pub rot: f32,
-    pub pivot: Vec2,
-
-    /// Mesh data
-    pub is_mesh: bool,
-    pub verts: Vec<Vertex>,
-
-    /// z-index. Lower values should render behind higher.
-    pub zindex: i32,
-}
-
 /// Modify animation based on time, and return the appropriate frame.
 pub fn get_frame_by_time(anim: &mut Animation, time: Instant, speed: f32) -> i32 {
     // modify frames to simulate speeds
@@ -340,10 +314,6 @@ pub fn get_frame_by_time(anim: &mut Animation, time: Instant, speed: f32) -> i32
 }
 
 /// Process an animation at the specified frame.
-///
-/// `after_animate` is a closure that runs immediately after animations, and before inheritence of a bone's parent properties.
-///
-/// last_anim idx and frame are used for blending.
 pub fn animate(
     armature: &mut Armature,
     anim_idx: usize,
@@ -370,29 +340,23 @@ pub fn animate(
             };
         }
 
+        let keyframes = &anim.keyframes;
+
         // animate prop
         macro_rules! animate {
             ($element:expr, $vert_id:expr, $og_value:expr) => {
-                animate_f32(
-                    &anim.keyframes,
-                    prop!().id,
-                    frame,
-                    $element,
-                    $vert_id,
-                    $og_value,
-                )
+                animate_f32(keyframes, prop!().id, frame, $element, $vert_id, $og_value)
             };
         }
 
-        #[rustfmt::skip] {
-                prop!().pos.x   += animate!(AnimElement::PositionX, -1, 0.).0;
-                prop!().pos.y   += animate!(AnimElement::PositionY, -1, 0.).0;
-                prop!().rot     += animate!(AnimElement::Rotation,  -1, 0.).0;
-                prop!().scale.x *= animate!(AnimElement::ScaleX,    -1, 1.).0;
-                prop!().scale.y *= animate!(AnimElement::ScaleY,    -1, 1.).0;
-                prop!().pivot.x += animate!(AnimElement::PivotX,    -1, 0.).0;
-                prop!().pivot.y += animate!(AnimElement::PivotY,    -1, 0.).0;
-            };
+        #[rustfmt::skip]
+        {
+            prop!().pos.x   += animate!(AnimElement::PositionX, -1, 0.).0;
+            prop!().pos.y   += animate!(AnimElement::PositionY, -1, 0.).0;
+            prop!().rot     += animate!(AnimElement::Rotation,  -1, 0.).0;
+            prop!().scale.x *= animate!(AnimElement::ScaleX,    -1, 1.).0;
+            prop!().scale.y *= animate!(AnimElement::ScaleY,    -1, 1.).0;
+        };
 
         for v in 0..prop!().vertices.len() {
             prop!().vertices[v].pos.x += animate!(AnimElement::VertPositionX, v as i32, 0.).0;
@@ -412,15 +376,11 @@ pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<i32, f32>) {
     for b in 0..bones.len() {
         if bones[b].parent_idx != -1 {
             let parent = bones[bones[b].parent_idx as usize].clone();
-            let parent_rot = parent.rot;
 
             bones[b].rot += parent.rot;
             bones[b].scale *= parent.scale;
             bones[b].pos *= parent.scale;
-            bones[b].pos = Vec2::new(
-                bones[b].pos.x * parent_rot.cos() - bones[b].pos.y * parent_rot.sin(),
-                bones[b].pos.x * parent_rot.sin() + bones[b].pos.y * parent_rot.cos(),
-            );
+            bones[b].pos = rotate(&bones[b].pos, parent.rot);
             bones[b].pos += parent.pos;
         }
 
