@@ -422,62 +422,111 @@ pub fn normalize(vec: Vec2) -> Vec2 {
     Vec2::new(vec.x / mag, vec.y / mag)
 }
 
-pub fn inverse_kinematics(bones: &Vec<Bone>, ik_families: &Vec<IkFamily>) -> HashMap<i32, f32> {
-    let mut cbones = bones.clone();
+pub fn rotate(point: &Vec2, rot: f32) -> Vec2 {
+    Vec2 {
+        x: point.x * rot.cos() - point.y * rot.sin(),
+        y: point.x * rot.sin() + point.y * rot.cos(),
+    }
+}
 
+pub fn inverse_kinematics(bones: &mut Vec<Bone>, ik_families: &Vec<IkFamily>) -> HashMap<i32, f32> {
     let mut ik_rot: HashMap<i32, f32> = HashMap::new();
 
     for family in ik_families {
+        let base_line = normalize(
+            bones[family.target_idx as usize].pos - bones[family.bone_idxs[0] as usize].pos,
+        );
+        let base_angle = base_line.y.atan2(base_line.x);
+
         // forward reaching
-        let mut next_pos = cbones[family.target_idx as usize].pos;
+        let mut next_pos = bones[family.target_idx as usize].pos;
         let mut next_length = 0.;
         for i in (0..family.bone_idxs.len()).rev() {
-            let bone = &cbones[family.bone_idxs[i] as usize];
-            let mut length = normalize(next_pos - bone.pos) * next_length;
+            macro_rules! bone {
+                () => {
+                    bones[family.bone_idxs[i] as usize]
+                };
+            }
+
+            let mut length = normalize(next_pos - bone!().pos) * next_length;
             if length.x.is_nan() {
                 length = Vec2::new(0., 0.);
             }
 
             if i != 0 {
-                let next_bone = &cbones[family.bone_idxs[i - 1] as usize];
-                next_length = magnitude(bone.pos - next_bone.pos);
+                let next_bone = &bones[family.bone_idxs[i - 1] as usize];
+                next_length = magnitude(bone!().pos - next_bone.pos);
+            }
+            bone!().pos = next_pos - length;
+
+            if i != 0
+                && i != family.bone_idxs.len() - 1
+                && family.constraint != JointConstraint::None
+            {
+                let joint_line = normalize(next_pos - bone!().pos);
+                let joint_angle = joint_line.y.atan2(joint_line.x) - base_angle;
+
+                let constraint_min;
+                let constraint_max;
+                if family.constraint == JointConstraint::Clockwise {
+                    constraint_min = 0.;
+                    constraint_max = 3.14;
+                } else {
+                    constraint_min = -3.14;
+                    constraint_max = 0.;
+                }
+
+                if joint_angle > constraint_max || joint_angle < constraint_min {
+                    let push_angle = -joint_angle * 2.;
+                    let new_point = rotate(&(bone!().pos - next_pos), push_angle);
+                    bone!().pos = new_point + next_pos;
+                }
             }
 
-            cbones[family.bone_idxs[i] as usize].pos = next_pos - length;
-            next_pos -= length;
+            next_pos = bone!().pos;
         }
 
         // backward reaching
-        let mut prev_pos = cbones[family.bone_idxs[0] as usize].pos;
+        let mut prev_pos = bones[family.bone_idxs[0] as usize].pos;
         let mut prev_length = 0.;
         for i in 0..family.bone_idxs.len() {
-            let bone = &cbones[family.bone_idxs[i] as usize];
-            let mut length = normalize(prev_pos - bone.pos) * prev_length;
+            macro_rules! bone {
+                () => {
+                    bones[family.bone_idxs[i] as usize]
+                };
+            }
+            let mut length = normalize(prev_pos - bone!().pos) * prev_length;
             if length.x.is_nan() {
                 length = Vec2::new(0., 0.);
             }
 
             if i != family.bone_idxs.len() - 1 {
-                let prev_bone = &cbones[family.bone_idxs[i + 1] as usize];
-                prev_length = magnitude(bone.pos - prev_bone.pos);
+                let prev_bone = &bones[family.bone_idxs[i + 1] as usize];
+                prev_length = magnitude(bone!().pos - prev_bone.pos);
             }
 
-            cbones[family.bone_idxs[i] as usize].pos = prev_pos - length;
-            prev_pos -= length;
+            bone!().pos = prev_pos - length;
+            prev_pos = bone!().pos;
         }
 
-        let end_bone = &cbones[*family.bone_idxs.last().unwrap() as usize];
+        let end_bone = &bones[*family.bone_idxs.last().unwrap() as usize];
         let mut tip_pos = end_bone.pos;
         for i in (0..family.bone_idxs.len()).rev() {
+            macro_rules! bone {
+                () => {
+                    bones[family.bone_idxs[i] as usize]
+                };
+            }
             if i == family.bone_idxs.len() - 1 {
                 continue;
             }
-            let dir = tip_pos - cbones[family.bone_idxs[i] as usize].pos;
-            let rot = dir.y.atan2(dir.x);
-            tip_pos = cbones[family.bone_idxs[i] as usize].pos;
-            cbones[family.bone_idxs[i] as usize].rot = rot;
+            let dir = tip_pos - bone!().pos;
+            bone!().rot = dir.y.atan2(dir.x);
+            tip_pos = bone!().pos;
 
-            ik_rot.insert(family.bone_idxs[i], rot);
+            ik_rot.insert(family.bone_idxs[i], bone!().rot);
+
+            println!("{}", bone!().rot);
         }
     }
 
