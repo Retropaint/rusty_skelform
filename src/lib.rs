@@ -450,9 +450,11 @@ pub fn inverse_kinematics(bones: &mut Vec<Bone>, ik_families: &Vec<IkFamily>) ->
     let mut ik_rot: HashMap<i32, f32> = HashMap::new();
 
     for family in ik_families {
-        let base_line = normalize(
-            bones[family.target_idx as usize].pos - bones[family.bone_idxs[0] as usize].pos,
-        );
+        if family.target_idx == -1 {
+            continue;
+        }
+        let root = bones[family.bone_idxs[0] as usize].pos;
+        let base_line = normalize(bones[family.target_idx as usize].pos - root);
         let base_angle = base_line.y.atan2(base_line.x);
 
         // forward reaching
@@ -465,9 +467,9 @@ pub fn inverse_kinematics(bones: &mut Vec<Bone>, ik_families: &Vec<IkFamily>) ->
                 };
             }
 
-            let mut length = normalize(next_pos - bone!().pos) * next_length;
-            if length.x.is_nan() {
-                length = Vec2::new(0., 0.);
+            let mut length = Vec2::new(0., 0.);
+            if i != family.bone_idxs.len() - 1 {
+                length = normalize(next_pos - bone!().pos) * next_length;
             }
 
             if i != 0 {
@@ -504,17 +506,21 @@ pub fn inverse_kinematics(bones: &mut Vec<Bone>, ik_families: &Vec<IkFamily>) ->
         }
 
         // backward reaching
-        let mut prev_pos = bones[family.bone_idxs[0] as usize].pos;
+        let mut prev_pos = root;
         let mut prev_length = 0.;
         for i in 0..family.bone_idxs.len() {
+            if family.target_idx == -1 {
+                continue;
+            }
             macro_rules! bone {
                 () => {
                     bones[family.bone_idxs[i] as usize]
                 };
             }
-            let mut length = normalize(prev_pos - bone!().pos) * prev_length;
-            if length.x.is_nan() {
-                length = Vec2::new(0., 0.);
+
+            let mut length = Vec2::new(0., 0.);
+            if i != 0 {
+                length = normalize(prev_pos - bone!().pos) * prev_length;
             }
 
             if i != family.bone_idxs.len() - 1 {
@@ -529,21 +535,27 @@ pub fn inverse_kinematics(bones: &mut Vec<Bone>, ik_families: &Vec<IkFamily>) ->
         let end_bone = &bones[*family.bone_idxs.last().unwrap() as usize];
         let mut tip_pos = end_bone.pos;
         for i in (0..family.bone_idxs.len()).rev() {
+            if family.target_idx == -1 || i == family.bone_idxs.len() - 1 {
+                continue;
+            }
             macro_rules! bone {
                 () => {
                     bones[family.bone_idxs[i] as usize]
                 };
             }
-            if i == family.bone_idxs.len() - 1 {
-                continue;
-            }
+
             let dir = tip_pos - bone!().pos;
             bone!().rot = dir.y.atan2(dir.x);
             tip_pos = bone!().pos;
+        }
+    }
 
-            ik_rot.insert(family.bone_idxs[i], bone!().rot);
-
-            println!("{}", bone!().rot);
+    for family in ik_families {
+        for i in 0..family.bone_idxs.len() {
+            if i == family.bone_idxs.len() - 1 {
+                continue;
+            }
+            ik_rot.insert(family.bone_idxs[i], bones[family.bone_idxs[i] as usize].rot);
         }
     }
 
