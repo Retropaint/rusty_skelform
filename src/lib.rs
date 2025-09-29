@@ -121,9 +121,12 @@ impl std::fmt::Display for Vec2 {
 #[derive(serde::Deserialize, Clone, Default, Debug)]
 #[rustfmt::skip]
 pub struct Animation {
-    #[serde(default)] pub name: String,
-    #[serde(default)] pub fps: i32,
-    #[serde(default)] pub keyframes: Vec<Keyframe>,
+    #[serde(default)] 
+    pub name: String,
+    #[serde(default)] 
+    pub fps: i32,
+    #[serde(default)] 
+    pub keyframes: Vec<Keyframe>,
 }
 #[derive(serde::Deserialize, Clone, Debug, Default)]
 #[rustfmt::skip]
@@ -181,21 +184,31 @@ pub enum AnimElement {
 #[derive(PartialEq, serde::Serialize, serde::Deserialize, Clone, Default, Debug)]
 #[rustfmt::skip]
 pub struct Keyframe {
-    #[serde(default)] pub frame: i32,
-    #[serde(default)] pub bone_id: i32,
-    #[serde(default)] pub element: AnimElement,
-    #[serde(default)] pub element_id: i32,
-    #[serde(default = "default_neg_one")] pub vert_id: i32,
-    #[serde(default)] pub value: f32,
-    #[serde(default)] pub transition: Transition,
-    #[serde(skip)]    pub label_top: f32,
+    #[serde(default)] 
+    pub frame: i32,
+    #[serde(default)] 
+    pub bone_id: i32,
+    #[serde(default)] 
+    pub element: AnimElement,
+    #[serde(default)] 
+    pub element_id: i32,
+    #[serde(default = "default_neg_one")] 
+    pub vert_id: i32,
+    #[serde(default)] 
+    pub value: f32,
+    #[serde(default)] 
+    pub transition: Transition,
+    #[serde(skip)]    
+    pub label_top: f32,
 }
 
 #[derive(PartialEq, serde::Deserialize, Clone, Default, Debug)]
 #[rustfmt::skip]
 pub struct AnimBone {
-    #[serde(default)] pub id: i32,
-    #[serde(default)] pub fields: Vec<AnimField>,
+    #[serde(default)] 
+    pub id: i32,
+    #[serde(default)] 
+    pub fields: Vec<AnimField>,
 }
 #[derive(PartialEq, serde::Serialize, serde::Deserialize, Clone, Default, Debug)]
 pub enum Transition {
@@ -207,10 +220,14 @@ pub enum Transition {
 #[derive(PartialEq, serde::Deserialize, Clone, Default, Debug)]
 #[rustfmt::skip]
 pub struct AnimField {
-    #[serde(default)] pub id: i32,
-    #[serde(default)] pub value: Vec2,
-    #[serde(default)] pub transition: Transition,
-    #[serde(skip)]    pub label_top: f32,
+    #[serde(default)] 
+    pub id: i32,
+    #[serde(default)] 
+    pub value: Vec2,
+    #[serde(default)] 
+    pub transition: Transition,
+    #[serde(skip)]    
+    pub label_top: f32,
 }
 
 #[derive(serde::Deserialize, Clone, Default, Debug)]
