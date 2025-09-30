@@ -137,7 +137,7 @@ pub struct Bone {
     pub name: String,
 
     #[serde(default = "default_neg_one")] 
-    pub parent_idx: i32,
+    pub parent_id: i32,
     #[serde(default)] 
     pub style_idxs: Vec<i32>,
     #[serde(default = "default_neg_one")] 
@@ -249,8 +249,8 @@ pub enum JointConstraint {
 #[derive(serde::Deserialize, Clone, Debug)]
 pub struct IkFamily {
     pub constraint: JointConstraint,
-    pub target_idx: i32,
-    pub bone_idxs: Vec<i32>,
+    pub target_id: i32,
+    pub bone_ids: Vec<i32>,
 }
 
 #[derive(serde::Deserialize, Clone, Debug, Default)]
@@ -374,8 +374,8 @@ pub fn animate(
 
 pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<i32, f32>) {
     for b in 0..bones.len() {
-        if bones[b].parent_idx != -1 {
-            let parent = bones[bones[b].parent_idx as usize].clone();
+        if bones[b].parent_id != -1 {
+            let parent = bones[bones[b].parent_id as usize].clone();
 
             bones[b].rot += parent.rot;
             bones[b].scale *= parent.scale;
@@ -410,36 +410,36 @@ pub fn inverse_kinematics(bones: &mut Vec<Bone>, ik_families: &Vec<IkFamily>) ->
     let mut ik_rot: HashMap<i32, f32> = HashMap::new();
 
     for family in ik_families {
-        if family.target_idx == -1 {
+        if family.target_id == -1 {
             continue;
         }
-        let root = bones[family.bone_idxs[0] as usize].pos;
-        let base_line = normalize(bones[family.target_idx as usize].pos - root);
+        let root = bones[family.bone_ids[0] as usize].pos;
+        let base_line = normalize(bones[family.target_id as usize].pos - root);
         let base_angle = base_line.y.atan2(base_line.x);
 
         // forward reaching
-        let mut next_pos = bones[family.target_idx as usize].pos;
+        let mut next_pos = bones[family.target_id as usize].pos;
         let mut next_length = 0.;
-        for i in (0..family.bone_idxs.len()).rev() {
+        for i in (0..family.bone_ids.len()).rev() {
             macro_rules! bone {
                 () => {
-                    bones[family.bone_idxs[i] as usize]
+                    bones[family.bone_ids[i] as usize]
                 };
             }
 
             let mut length = Vec2::new(0., 0.);
-            if i != family.bone_idxs.len() - 1 {
+            if i != family.bone_ids.len() - 1 {
                 length = normalize(next_pos - bone!().pos) * next_length;
             }
 
             if i != 0 {
-                let next_bone = &bones[family.bone_idxs[i - 1] as usize];
+                let next_bone = &bones[family.bone_ids[i - 1] as usize];
                 next_length = magnitude(bone!().pos - next_bone.pos);
             }
             bone!().pos = next_pos - length;
 
             if i != 0
-                && i != family.bone_idxs.len() - 1
+                && i != family.bone_ids.len() - 1
                 && family.constraint != JointConstraint::None
             {
                 let joint_line = normalize(next_pos - bone!().pos);
@@ -468,13 +468,13 @@ pub fn inverse_kinematics(bones: &mut Vec<Bone>, ik_families: &Vec<IkFamily>) ->
         // backward reaching
         let mut prev_pos = root;
         let mut prev_length = 0.;
-        for i in 0..family.bone_idxs.len() {
-            if family.target_idx == -1 {
+        for i in 0..family.bone_ids.len() {
+            if family.target_id == -1 {
                 continue;
             }
             macro_rules! bone {
                 () => {
-                    bones[family.bone_idxs[i] as usize]
+                    bones[family.bone_ids[i] as usize]
                 };
             }
 
@@ -483,8 +483,8 @@ pub fn inverse_kinematics(bones: &mut Vec<Bone>, ik_families: &Vec<IkFamily>) ->
                 length = normalize(prev_pos - bone!().pos) * prev_length;
             }
 
-            if i != family.bone_idxs.len() - 1 {
-                let prev_bone = &bones[family.bone_idxs[i + 1] as usize];
+            if i != family.bone_ids.len() - 1 {
+                let prev_bone = &bones[family.bone_ids[i + 1] as usize];
                 prev_length = magnitude(bone!().pos - prev_bone.pos);
             }
 
@@ -492,15 +492,15 @@ pub fn inverse_kinematics(bones: &mut Vec<Bone>, ik_families: &Vec<IkFamily>) ->
             prev_pos = bone!().pos;
         }
 
-        let end_bone = &bones[*family.bone_idxs.last().unwrap() as usize];
+        let end_bone = &bones[*family.bone_ids.last().unwrap() as usize];
         let mut tip_pos = end_bone.pos;
-        for i in (0..family.bone_idxs.len()).rev() {
-            if family.target_idx == -1 || i == family.bone_idxs.len() - 1 {
+        for i in (0..family.bone_ids.len()).rev() {
+            if family.target_id == -1 || i == family.bone_ids.len() - 1 {
                 continue;
             }
             macro_rules! bone {
                 () => {
-                    bones[family.bone_idxs[i] as usize]
+                    bones[family.bone_ids[i] as usize]
                 };
             }
 
@@ -511,11 +511,11 @@ pub fn inverse_kinematics(bones: &mut Vec<Bone>, ik_families: &Vec<IkFamily>) ->
     }
 
     for family in ik_families {
-        for i in 0..family.bone_idxs.len() {
-            if i == family.bone_idxs.len() - 1 {
+        for i in 0..family.bone_ids.len() {
+            if i == family.bone_ids.len() - 1 {
                 continue;
             }
-            ik_rot.insert(family.bone_idxs[i], bones[family.bone_idxs[i] as usize].rot);
+            ik_rot.insert(family.bone_ids[i], bones[family.bone_ids[i] as usize].rot);
         }
     }
 
