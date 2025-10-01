@@ -444,40 +444,6 @@ pub fn inverse_kinematics(
             }
             bone!().pos = next_pos - length;
 
-            if i != 0
-                && i != family.bone_ids.len() - 1
-                && family.constraint != JointConstraint::None
-            {
-                let joint_line = normalize(next_pos - bone!().pos);
-                let joint_angle = joint_line.y.atan2(joint_line.x) - base_angle;
-
-                let constraint_min;
-                let constraint_max;
-                if !reverse_constraints {
-                    if family.constraint == JointConstraint::Clockwise {
-                        constraint_min = -3.14;
-                        constraint_max = 0.;
-                    } else {
-                        constraint_min = 0.;
-                        constraint_max = 3.14;
-                    }
-                } else {
-                    if family.constraint == JointConstraint::Clockwise {
-                        constraint_min = 0.;
-                        constraint_max = 3.14;
-                    } else {
-                        constraint_min = -3.14;
-                        constraint_max = 0.;
-                    }
-                }
-
-                if joint_angle > constraint_max || joint_angle < constraint_min {
-                    let push_angle = -joint_angle * 2.;
-                    let new_point = rotate(&(bone!().pos - next_pos), push_angle);
-                    bone!().pos = new_point + next_pos;
-                }
-            }
-
             next_pos = bone!().pos;
         }
 
@@ -505,6 +471,41 @@ pub fn inverse_kinematics(
             }
 
             bone!().pos = prev_pos - length;
+
+            if i != 0
+                && i != family.bone_ids.len() - 1
+                && family.constraint != JointConstraint::None
+            {
+                let joint_line = normalize(prev_pos - bone!().pos);
+                let joint_angle = joint_line.y.atan2(joint_line.x) - base_angle;
+
+                let constraint_min;
+                let constraint_max;
+                if !reverse_constraints {
+                    if family.constraint == JointConstraint::Clockwise {
+                        constraint_min = -3.14;
+                        constraint_max = 0.;
+                    } else {
+                        constraint_min = 0.;
+                        constraint_max = 3.14;
+                    }
+                } else {
+                    if family.constraint == JointConstraint::Clockwise {
+                        constraint_min = 0.;
+                        constraint_max = 3.14;
+                    } else {
+                        constraint_min = -3.14;
+                        constraint_max = 0.;
+                    }
+                }
+
+                if joint_angle > constraint_max || joint_angle < constraint_min {
+                    let push_angle = -joint_angle * 2.;
+                    let new_point = rotate(&(bone!().pos - prev_pos), push_angle);
+                    bone!().pos = new_point + prev_pos;
+                }
+            }
+
             prev_pos = bone!().pos;
         }
 
