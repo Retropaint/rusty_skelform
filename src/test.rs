@@ -2,7 +2,7 @@ use crate::*;
 
 #[cfg(test)]
 mod tests {
-    use crate::{inverse_kinematics, Armature, Bone, IkFamily, Vec2};
+    use crate::*;
 
     fn setup_armature() -> Armature {
         let mut armature = Armature::default();
@@ -29,27 +29,21 @@ mod tests {
 
         println!("Target:\n{}\n", armature.bones[0].pos);
 
-        println!("Bone positions:");
+        println!("Initial bone positions:");
         println!("{}", armature.bones[1].pos);
         println!("{}", armature.bones[2].pos);
         println!("{}", armature.bones[3].pos);
-        println!("");
+        println!();
 
         let start_pos = armature.bones[armature.ik_families[0].bone_ids[0] as usize].pos;
 
-        crate::test::forward_reaching(&armature.ik_families[0], &mut armature.bones);
         println!("Forward reaching:");
-        println!("{}", armature.bones[1].pos);
-        println!("{}", armature.bones[2].pos);
-        println!("{}", armature.bones[3].pos);
-        println!("");
+        crate::test::forward_reaching(&armature.ik_families[0], &mut armature.bones);
+        println!();
 
-        crate::test::backward_reaching(&armature.ik_families[0], &mut armature.bones, start_pos);
         println!("Backward-reaching:");
-        println!("{}", armature.bones[1].pos);
-        println!("{}", armature.bones[2].pos);
-        println!("{}", armature.bones[3].pos);
-        println!("");
+        crate::test::backward_reaching(&armature.ik_families[0], &mut armature.bones, start_pos);
+        println!();
     }
 }
 
@@ -74,6 +68,8 @@ pub fn forward_reaching(family: &IkFamily, bones: &mut Vec<Bone>) {
         }
         bone!().pos = next_pos - length;
 
+        println!("{}", bone!().pos);
+
         next_pos = bone!().pos;
     }
 }
@@ -97,8 +93,10 @@ pub fn backward_reaching(family: &IkFamily, bones: &mut Vec<Bone>, start_pos: Ve
             let prev_bone = &bones[family.bone_ids[i + 1] as usize];
             prev_length = magnitude(bone!().pos - prev_bone.pos);
         }
-
         bone!().pos = prev_pos - length;
+
+        println!("{}", bone!().pos);
+
         prev_pos = bone!().pos;
     }
 }
