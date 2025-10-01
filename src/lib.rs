@@ -331,47 +331,47 @@ pub fn animate(
 
     armature.metadata.last_frame = frame;
 
-    let mut props: Vec<Bone> = Vec::new();
+    let mut bones: Vec<Bone> = Vec::new();
 
     for bone in &armature.bones {
-        props.push(bone.clone());
+        bones.push(bone.clone());
 
-        macro_rules! prop {
+        macro_rules! bone {
             () => {
-                props.last_mut().unwrap()
+                bones.last_mut().unwrap()
             };
         }
 
         let keyframes = &anim.keyframes;
 
-        // animate prop
+        // animate bone
         macro_rules! animate {
             ($element:expr, $vert_id:expr, $og_value:expr) => {
-                animate_f32(keyframes, prop!().id, frame, $element, $vert_id, $og_value)
+                animate_f32(keyframes, bone!().id, frame, $element, $vert_id, $og_value)
             };
         }
 
         #[rustfmt::skip]
         {
-            prop!().pos.x   += animate!(AnimElement::PositionX, -1, 0.).0;
-            prop!().pos.y   += animate!(AnimElement::PositionY, -1, 0.).0;
-            prop!().rot     += animate!(AnimElement::Rotation,  -1, 0.).0;
-            prop!().scale.x *= animate!(AnimElement::ScaleX,    -1, 1.).0;
-            prop!().scale.y *= animate!(AnimElement::ScaleY,    -1, 1.).0;
+            bone!().pos.x   += animate!(AnimElement::PositionX, -1, 0.).0;
+            bone!().pos.y   += animate!(AnimElement::PositionY, -1, 0.).0;
+            bone!().rot     += animate!(AnimElement::Rotation,  -1, 0.).0;
+            bone!().scale.x *= animate!(AnimElement::ScaleX,    -1, 1.).0;
+            bone!().scale.y *= animate!(AnimElement::ScaleY,    -1, 1.).0;
         };
 
-        for v in 0..prop!().vertices.len() {
-            prop!().vertices[v].pos.x += animate!(AnimElement::VertPositionX, v as i32, 0.).0;
-            prop!().vertices[v].pos.y += animate!(AnimElement::VertPositionY, v as i32, 0.).0;
+        for v in 0..bone!().vertices.len() {
+            bone!().vertices[v].pos.x += animate!(AnimElement::VertPositionX, v as i32, 0.).0;
+            bone!().vertices[v].pos.y += animate!(AnimElement::VertPositionY, v as i32, 0.).0;
         }
 
         let tex_frame = animate!(AnimElement::Texture, -1, 0.).1;
         if tex_frame != usize::MAX {
             let prev_tex_idx = anim.keyframes[tex_frame].value;
-            prop!().tex_idx = prev_tex_idx as i32;
+            bone!().tex_idx = prev_tex_idx as i32;
         }
     }
-    props
+    bones
 }
 
 pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<i32, f32>) {
