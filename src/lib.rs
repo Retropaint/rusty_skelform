@@ -180,23 +180,22 @@ pub enum AnimElement {
 }
 
 #[derive(PartialEq, serde::Serialize, serde::Deserialize, Clone, Default, Debug)]
-#[rustfmt::skip]
 pub struct Keyframe {
-    #[serde(default)] 
+    #[serde(default)]
     pub frame: i32,
-    #[serde(default)] 
+    #[serde(default)]
     pub bone_id: i32,
-    #[serde(default)] 
+    #[serde(default, rename = "_element")]
     pub element: AnimElement,
-    #[serde(default)] 
+    #[serde(default)]
     pub element_id: i32,
-    #[serde(default = "default_neg_one")] 
+    #[serde(default = "default_neg_one")]
     pub vert_id: i32,
-    #[serde(default)] 
+    #[serde(default)]
     pub value: f32,
-    #[serde(default)] 
+    #[serde(default)]
     pub transition: Transition,
-    #[serde(skip)]    
+    #[serde(skip)]
     pub label_top: f32,
 }
 
@@ -408,6 +407,81 @@ pub fn rotate(point: &Vec2, rot: f32) -> Vec2 {
     }
 }
 
+/// Interpolate an f32 value from the specified keyframe data.
+pub fn animate_f32(
+    keyframes: &Vec<Keyframe>,
+    id: i32,
+    frame: i32,
+    element: AnimElement,
+    vert_id: i32,
+    og_value: f32,
+) -> (f32, usize, usize) {
+    let mut prev = usize::MAX;
+    let mut next = usize::MAX;
+
+    // get start frame
+    for (i, kf) in keyframes.iter().enumerate() {
+        if kf.frame > frame {
+            break;
+        } else if kf.element == element && kf.bone_id == id && kf.vert_id == vert_id {
+            prev = i;
+        }
+    }
+
+    // get end frame
+    for (i, kf) in keyframes.iter().enumerate() {
+        if kf.frame >= frame && kf.element == element && kf.bone_id == id && kf.vert_id == vert_id {
+            next = i;
+            break;
+        }
+    }
+
+    // ensure both frames are pointing somewhere
+    if prev == usize::MAX {
+        prev = next;
+    } else if next == usize::MAX {
+        next = prev;
+    }
+
+    // if both are max, then the frame doesn't exist. Keep original value
+    if prev == usize::MAX && next == usize::MAX {
+        return (og_value, usize::MAX, usize::MAX);
+    }
+
+    let mut total_frames = keyframes[next].frame - keyframes[prev].frame;
+    // Tweener doesn't accept duration of 0
+    if total_frames == 0 {
+        total_frames = 1;
+    }
+
+    let current_frame = frame - keyframes[prev].frame;
+
+    // run the transition
+    macro_rules! transition {
+        ($tweener:expr) => {
+            $tweener(keyframes[prev].value, keyframes[next].value, total_frames)
+                .move_to(current_frame)
+        };
+    }
+
+    let current = match keyframes[next].transition {
+        Transition::Linear => transition!(tween::Tweener::linear),
+        Transition::SineIn => transition!(tween::Tweener::sine_in),
+        Transition::SineOut => transition!(tween::Tweener::sine_out),
+    };
+
+    (current, prev, next)
+}
+
+pub fn find_bone(id: i32, bones: &Vec<Bone>) -> Option<&Bone> {
+    for bone in bones {
+        if bone.id == id {
+            return Some(bone);
+        }
+    }
+    None
+}
+
 pub fn inverse_kinematics(
     bones: &mut Vec<Bone>,
     ik_families: &Vec<IkFamily>,
@@ -537,81 +611,6 @@ pub fn inverse_kinematics(
     }
 
     ik_rot
-}
-
-/// Interpolate an f32 value from the specified keyframe data.
-pub fn animate_f32(
-    keyframes: &Vec<Keyframe>,
-    id: i32,
-    frame: i32,
-    element: AnimElement,
-    vert_id: i32,
-    og_value: f32,
-) -> (f32, usize, usize) {
-    let mut prev = usize::MAX;
-    let mut next = usize::MAX;
-
-    // get start frame
-    for (i, kf) in keyframes.iter().enumerate() {
-        if kf.frame > frame {
-            break;
-        } else if kf.element == element && kf.bone_id == id && kf.vert_id == vert_id {
-            prev = i;
-        }
-    }
-
-    // get end frame
-    for (i, kf) in keyframes.iter().enumerate() {
-        if kf.frame >= frame && kf.element == element && kf.bone_id == id && kf.vert_id == vert_id {
-            next = i;
-            break;
-        }
-    }
-
-    // ensure both frames are pointing somewhere
-    if prev == usize::MAX {
-        prev = next;
-    } else if next == usize::MAX {
-        next = prev;
-    }
-
-    // if both are max, then the frame doesn't exist. Keep original value
-    if prev == usize::MAX && next == usize::MAX {
-        return (og_value, usize::MAX, usize::MAX);
-    }
-
-    let mut total_frames = keyframes[next].frame - keyframes[prev].frame;
-    // Tweener doesn't accept duration of 0
-    if total_frames == 0 {
-        total_frames = 1;
-    }
-
-    let current_frame = frame - keyframes[prev].frame;
-
-    // run the transition
-    macro_rules! transition {
-        ($tweener:expr) => {
-            $tweener(keyframes[prev].value, keyframes[next].value, total_frames)
-                .move_to(current_frame)
-        };
-    }
-
-    let current = match keyframes[next].transition {
-        Transition::Linear => transition!(tween::Tweener::linear),
-        Transition::SineIn => transition!(tween::Tweener::sine_in),
-        Transition::SineOut => transition!(tween::Tweener::sine_out),
-    };
-
-    (current, prev, next)
-}
-
-pub fn find_bone(id: i32, bones: &Vec<Bone>) -> Option<&Bone> {
-    for bone in bones {
-        if bone.id == id {
-            return Some(bone);
-        }
-    }
-    None
 }
 
 fn default_neg_one() -> i32 {
