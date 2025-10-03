@@ -24,6 +24,12 @@ mod tests {
     }
 
     #[test]
+    fn test_animate() {
+        let mut armature = setup_armature();
+        crate::animate(&mut armature, 0, 0, false);
+    }
+
+    #[test]
     fn test_fabrik() {
         let mut armature = setup_armature();
 
@@ -41,7 +47,7 @@ mod tests {
         crate::test::forward_reaching(&armature.ik_families[0], &mut armature.bones, start_pos);
         println!();
 
-        let constraint_str = match armature.ik_families[0].constraint  {
+        let constraint_str = match armature.ik_families[0].constraint {
             JointConstraint::Clockwise => " (Clockwise)",
             JointConstraint::CounterClockwise => " (Clockwise)",
             _ => "",
