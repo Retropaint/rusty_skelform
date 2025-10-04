@@ -44,7 +44,7 @@ mod tests {
         let start_pos = armature.bones[armature.ik_families[0].bone_ids[0] as usize].pos;
 
         println!("Forward reaching:");
-        crate::test::forward_reaching(&armature.ik_families[0], &mut armature.bones, start_pos);
+        crate::tests::forward_reaching(&armature.ik_families[0], &mut armature.bones, start_pos);
         println!();
 
         let constraint_str = match armature.ik_families[0].constraint {
@@ -53,11 +53,11 @@ mod tests {
             _ => "",
         };
         println!("Backward-reaching{}:", constraint_str);
-        crate::test::backward_reaching(&armature.ik_families[0], &mut armature.bones, start_pos);
+        crate::tests::backward_reaching(&armature.ik_families[0], &mut armature.bones, start_pos);
         println!();
 
         println!("Rotations:");
-        crate::test::get_ik_rots(&armature.ik_families[0], &mut armature.bones);
+        crate::tests::get_ik_rots(&armature.ik_families[0], &mut armature.bones);
         println!();
     }
 }

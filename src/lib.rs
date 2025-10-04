@@ -1,4 +1,4 @@
-pub mod test;
+pub mod tests;
 
 use std::{collections::HashMap, time::Instant};
 
