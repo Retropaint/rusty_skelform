@@ -229,7 +229,7 @@ pub struct AnimField {
 
 #[derive(serde::Deserialize, Clone, Default, Debug)]
 pub struct Style {
-    #[serde(skip)]
+    #[serde(default)]
     pub id: i32,
     #[serde(default, rename = "_name")]
     pub name: String,
