@@ -141,7 +141,7 @@ pub struct Bone {
     #[serde(default = "default_neg_one")] 
     pub parent_id: i32,
     #[serde(default)] 
-    pub style_idxs: Vec<i32>,
+    pub style_ids: Vec<i32>,
     #[serde(default = "default_neg_one")] 
     pub tex_idx: i32,
 
@@ -586,7 +586,7 @@ pub fn inverse_kinematics(
         let end_bone = &bones[*family.bone_ids.last().unwrap() as usize];
         let mut tip_pos = end_bone.pos;
         for i in (0..family.bone_ids.len()).rev() {
-            if family.target_id == -1 || i == family.bone_ids.len() - 1 {
+            if i == family.bone_ids.len() - 1 {
                 continue;
             }
             macro_rules! bone {
