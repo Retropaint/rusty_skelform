@@ -1,6 +1,9 @@
 pub mod tests;
 
-use std::{collections::HashMap, time::Instant};
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 
 #[repr(C)]
 #[derive(serde::Deserialize, Clone, Debug)]
@@ -295,82 +298,38 @@ pub struct Texture {
     pub pixels: Vec<u8>,
 }
 
-/// Modify animation based on time, and return the appropriate frame.
-pub fn get_frame_by_time(anim: &mut Animation, time: Instant, speed: f32) -> i32 {
-    // modify frames to simulate speeds
-    for kf in &mut anim.keyframes {
-        kf.frame = (kf.frame as f32 * (1. / speed.abs())) as i32;
-    }
-
-    let elapsed = time.elapsed().as_millis() as f32 / 1e3 as f32;
-    let frametime = 1. / anim.fps as f32;
-    let mut frame = (elapsed / frametime) as i32;
-
-    // reverse animation if speed is negative
-    if speed < 0. {
-        frame = anim.keyframes.last().unwrap().frame - frame;
-    }
-
-    frame
-}
-
 /// Process an animation at the specified frame.
-pub fn animate(
-    armature: &mut Armature,
-    anim_idx: usize,
-    mut frame: i32,
-    should_loop: bool,
-) -> Vec<Bone> {
-    let anim = armature.animations[anim_idx].clone();
-    let last_frame = anim.keyframes.last().unwrap().frame;
-
-    if should_loop && last_frame != 0 {
-        frame %= last_frame;
-    }
-
-    armature.metadata.last_frame = frame;
-
-    let mut bones: Vec<Bone> = Vec::new();
-
-    for bone in &armature.bones {
-        bones.push(bone.clone());
-
-        macro_rules! bone {
-            () => {
-                bones.last_mut().unwrap()
-            };
-        }
-
+pub fn animate(bones: &mut Vec<Bone>, anim: &Animation, frame: i32) {
+    for bone in bones {
         let keyframes = &anim.keyframes;
 
         // animate bone
         macro_rules! animate {
             ($element:expr, $vert_id:expr, $og_value:expr) => {
-                animate_f32(keyframes, bone!().id, frame, $element, $vert_id, $og_value)
+                animate_f32(keyframes, bone.id, frame, $element, $vert_id, $og_value)
             };
         }
 
         #[rustfmt::skip]
         {
-            bone!().pos.x   += animate!(AnimElement::PositionX, -1, 0.).0;
-            bone!().pos.y   += animate!(AnimElement::PositionY, -1, 0.).0;
-            bone!().rot     += animate!(AnimElement::Rotation,  -1, 0.).0;
-            bone!().scale.x *= animate!(AnimElement::ScaleX,    -1, 1.).0;
-            bone!().scale.y *= animate!(AnimElement::ScaleY,    -1, 1.).0;
+            bone.pos.x   = animate!(AnimElement::PositionX, -1, bone.pos.x).0;
+            bone.pos.y   = animate!(AnimElement::PositionY, -1, bone.pos.y).0;
+            bone.rot     = animate!(AnimElement::Rotation,  -1, bone.rot).0;
+            bone.scale.x = animate!(AnimElement::ScaleX,    -1, bone.scale.x).0;
+            bone.scale.y = animate!(AnimElement::ScaleY,    -1, bone.scale.y).0;
         };
 
-        for v in 0..bone!().vertices.len() {
-            bone!().vertices[v].pos.x += animate!(AnimElement::VertPositionX, v as i32, 0.).0;
-            bone!().vertices[v].pos.y += animate!(AnimElement::VertPositionY, v as i32, 0.).0;
+        for v in 0..bone.vertices.len() {
+            bone.vertices[v].pos.x += animate!(AnimElement::VertPositionX, v as i32, 0.).0;
+            bone.vertices[v].pos.y += animate!(AnimElement::VertPositionY, v as i32, 0.).0;
         }
 
         let tex_frame = animate!(AnimElement::Texture, -1, 0.).1;
         if tex_frame != usize::MAX {
             let prev_tex_idx = anim.keyframes[tex_frame].value;
-            bone!().tex_idx = prev_tex_idx as i32;
+            bone.tex_idx = prev_tex_idx as i32;
         }
     }
-    bones
 }
 
 pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<i32, f32>) {
@@ -421,9 +380,7 @@ pub fn animate_f32(
 
     // get start frame
     for (i, kf) in keyframes.iter().enumerate() {
-        if kf.frame > frame {
-            break;
-        } else if kf.element == element && kf.bone_id == id && kf.vert_id == vert_id {
+        if kf.frame < frame && kf.element == element && kf.bone_id == id && kf.vert_id == vert_id {
             prev = i;
         }
     }
@@ -611,6 +568,35 @@ pub fn inverse_kinematics(
     }
 
     ik_rot
+}
+
+pub fn format_frame(
+    mut frame: i32,
+    animation: &Animation,
+    reverse: bool,
+    should_loop: bool,
+) -> i32 {
+    let last_frame = animation.keyframes.last().unwrap().frame;
+
+    if should_loop {
+        frame %= last_frame
+    }
+
+    if reverse {
+        frame = last_frame - frame
+    }
+
+    frame
+}
+
+pub fn time_frame(time: Instant, animation: &Animation, reverse: bool, should_loop: bool) -> i32 {
+    let elapsed = time.elapsed().as_millis() as f32 / 1e3 as f32;
+    let frametime = 1. / animation.fps as f32;
+
+    let mut frame = (elapsed / frametime) as i32;
+    frame = format_frame(frame, animation, reverse, should_loop);
+
+    frame
 }
 
 fn default_neg_one() -> i32 {
