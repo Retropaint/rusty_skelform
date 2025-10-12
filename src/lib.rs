@@ -437,11 +437,7 @@ pub fn find_bone(id: i32, bones: &Vec<Bone>) -> Option<&Bone> {
     None
 }
 
-pub fn inverse_kinematics(
-    bones: &mut Vec<Bone>,
-    ik_families: &Vec<IkFamily>,
-    reverse_constraints: bool,
-) -> HashMap<i32, f32> {
+pub fn inverse_kinematics(bones: &mut Vec<Bone>, ik_families: &Vec<IkFamily>) -> HashMap<i32, f32> {
     let mut ik_rot: HashMap<i32, f32> = HashMap::new();
 
     for family in ik_families {
@@ -510,22 +506,12 @@ pub fn inverse_kinematics(
 
                 let constraint_min;
                 let constraint_max;
-                if !reverse_constraints {
-                    if family.constraint == JointConstraint::Clockwise {
-                        constraint_min = -3.14;
-                        constraint_max = 0.;
-                    } else {
-                        constraint_min = 0.;
-                        constraint_max = 3.14;
-                    }
+                if family.constraint == JointConstraint::Clockwise {
+                    constraint_min = -3.14;
+                    constraint_max = 0.;
                 } else {
-                    if family.constraint == JointConstraint::Clockwise {
-                        constraint_min = 0.;
-                        constraint_max = 3.14;
-                    } else {
-                        constraint_min = -3.14;
-                        constraint_max = 0.;
-                    }
+                    constraint_min = 0.;
+                    constraint_max = 3.14;
                 }
 
                 if joint_angle > constraint_max || joint_angle < constraint_min {
