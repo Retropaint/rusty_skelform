@@ -299,30 +299,28 @@ pub struct Texture {
 }
 
 /// Process an animation at the specified frame.
-pub fn animate(bones: &mut Vec<Bone>, anim: &Animation, frame: i32) {
+pub fn animate(bones: &mut Vec<Bone>, anim: &Animation, frame: i32, blend_frames: i32) {
     for bone in bones {
         let keyframes = &anim.keyframes;
 
         // animate bone
+        #[rustfmt::skip]
         macro_rules! animate {
             ($element:expr, $vert_id:expr, $og_value:expr) => {
-                animate_f32(keyframes, bone.id, frame, $element, $vert_id, $og_value)
+                animate_f32($element, &mut $og_value, keyframes, bone.id, frame, $vert_id, blend_frames)
             };
         }
 
-        #[rustfmt::skip]
-        {
-            bone.pos.x   = animate!(AnimElement::PositionX, -1, bone.pos.x).0;
-            bone.pos.y   = animate!(AnimElement::PositionY, -1, bone.pos.y).0;
-            bone.rot     = animate!(AnimElement::Rotation,  -1, bone.rot).0;
-            bone.scale.x = animate!(AnimElement::ScaleX,    -1, bone.scale.x).0;
-            bone.scale.y = animate!(AnimElement::ScaleY,    -1, bone.scale.y).0;
-        };
+        animate!(AnimElement::PositionX, -1, bone.pos.x);
+        animate!(AnimElement::PositionY, -1, bone.pos.y);
+        animate!(AnimElement::Rotation, -1, bone.rot);
+        animate!(AnimElement::ScaleX, -1, bone.scale.x);
+        animate!(AnimElement::ScaleY, -1, bone.scale.y);
 
-        for v in 0..bone.vertices.len() {
-            bone.vertices[v].pos.x += animate!(AnimElement::VertPositionX, v as i32, 0.).0;
-            bone.vertices[v].pos.y += animate!(AnimElement::VertPositionY, v as i32, 0.).0;
-        }
+        //for v in 0..bone.vertices.len() {
+        //    bone.vertices[v].pos.x += animate!(AnimElement::VertPositionX, v as i32, 0.).0;
+        //    bone.vertices[v].pos.y += animate!(AnimElement::VertPositionY, v as i32, 0.).0;
+        //}
 
         let tex_frame = animate!(AnimElement::Texture, -1, 0.).1;
         if tex_frame != usize::MAX {
@@ -368,13 +366,14 @@ pub fn rotate(point: &Vec2, rot: f32) -> Vec2 {
 
 /// Interpolate an f32 value from the specified keyframe data.
 pub fn animate_f32(
+    element: AnimElement,
+    field: &mut f32,
     keyframes: &Vec<Keyframe>,
     id: i32,
     frame: i32,
-    element: AnimElement,
     vert_id: i32,
-    og_value: f32,
-) -> (f32, usize, usize) {
+    blend_frames: i32,
+) -> (usize, usize) {
     let mut prev = usize::MAX;
     let mut next = usize::MAX;
 
@@ -402,20 +401,22 @@ pub fn animate_f32(
 
     // if both are max, then the frame doesn't exist. Keep original value
     if prev == usize::MAX && next == usize::MAX {
-        return (og_value, usize::MAX, usize::MAX);
+        return (usize::MAX, usize::MAX);
     }
 
     let total_frames = keyframes[next].frame - keyframes[prev].frame;
     let current_frame = frame - keyframes[prev].frame;
 
-    let current = interpolate(
+    let result = interpolate(
         current_frame,
         total_frames,
         keyframes[prev].value,
         keyframes[next].value,
     );
 
-    (current, prev, next)
+    *field = interpolate(current_frame, blend_frames, *field, result);
+
+    (prev, next)
 }
 
 fn interpolate(current: i32, max: i32, start_val: f32, end_val: f32) -> f32 {
