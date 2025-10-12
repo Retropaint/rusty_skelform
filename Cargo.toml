@@ -7,4 +7,3 @@ license = "MIT"
 
 [dependencies]
 serde = {version = "1.0.217", features = ["derive"] }
-tween = "2.0.4"

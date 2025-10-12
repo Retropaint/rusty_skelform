@@ -405,29 +405,26 @@ pub fn animate_f32(
         return (og_value, usize::MAX, usize::MAX);
     }
 
-    let mut total_frames = keyframes[next].frame - keyframes[prev].frame;
-    // Tweener doesn't accept duration of 0
-    if total_frames == 0 {
-        total_frames = 1;
-    }
-
+    let total_frames = keyframes[next].frame - keyframes[prev].frame;
     let current_frame = frame - keyframes[prev].frame;
 
-    // run the transition
-    macro_rules! transition {
-        ($tweener:expr) => {
-            $tweener(keyframes[prev].value, keyframes[next].value, total_frames)
-                .move_to(current_frame)
-        };
-    }
-
-    let current = match keyframes[next].transition {
-        Transition::Linear => transition!(tween::Tweener::linear),
-        Transition::SineIn => transition!(tween::Tweener::sine_in),
-        Transition::SineOut => transition!(tween::Tweener::sine_out),
-    };
+    let current = interpolate(
+        current_frame,
+        total_frames,
+        keyframes[prev].value,
+        keyframes[next].value,
+    );
 
     (current, prev, next)
+}
+
+fn interpolate(current: i32, max: i32, start_val: f32, end_val: f32) -> f32 {
+    if max == 0 || current >= max {
+        return end_val;
+    }
+    let interp = current as f32 / max as f32;
+    let end = end_val - start_val;
+    start_val + (end * interp)
 }
 
 pub fn find_bone(id: i32, bones: &Vec<Bone>) -> Option<&Bone> {
