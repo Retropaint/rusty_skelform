@@ -161,9 +161,6 @@ pub struct Bone {
     pub pos: Vec2,
     #[serde(default)] 
     pub zindex: f32,
-
-    /// used to properly offset bone's movement to counteract it's parent
-    #[serde(skip)] pub parent_rot: f32,
 }
 
 #[derive(
