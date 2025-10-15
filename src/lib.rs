@@ -560,7 +560,7 @@ pub fn format_frame(
     let last_frame = animation.keyframes.last().unwrap().frame;
 
     if should_loop {
-        frame %= last_frame
+        frame %= last_frame + 1
     }
 
     if reverse {
