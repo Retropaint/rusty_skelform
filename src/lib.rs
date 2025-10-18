@@ -145,7 +145,7 @@ pub struct Bone {
     pub parent_id: i32,
     #[serde(default)] 
     pub style_ids: Vec<i32>,
-    #[serde(default = "default_neg_one")] 
+    #[serde(default)] 
     pub tex_idx: i32,
 
     #[serde(default)] 
@@ -161,6 +161,13 @@ pub struct Bone {
     pub pos: Vec2,
     #[serde(default)] 
     pub zindex: f32,
+
+    #[serde(default)] 
+    pub init_rot: f32,
+    #[serde(default)] 
+    pub init_scale: Vec2,
+    #[serde(default)] 
+    pub init_pos: Vec2,    
 }
 
 #[derive(
@@ -303,27 +310,16 @@ pub fn animate(bones: &mut Vec<Bone>, anim: &Animation, frame: i32, blend_frames
         // animate bone
         #[rustfmt::skip]
         macro_rules! animate {
-            ($element:expr, $vert_id:expr, $og_value:expr) => {
-                animate_f32($element, &mut $og_value, keyframes, bone.id, frame, $vert_id, blend_frames)
+            ($element:expr, $field:expr, $default:expr) => {
+                interpolate_keyframes($element, &mut $field, $default, keyframes, bone.id, frame, blend_frames)
             };
         }
 
-        animate!(AnimElement::PositionX, -1, bone.pos.x);
-        animate!(AnimElement::PositionY, -1, bone.pos.y);
-        animate!(AnimElement::Rotation, -1, bone.rot);
-        animate!(AnimElement::ScaleX, -1, bone.scale.x);
-        animate!(AnimElement::ScaleY, -1, bone.scale.y);
-
-        //for v in 0..bone.vertices.len() {
-        //    bone.vertices[v].pos.x += animate!(AnimElement::VertPositionX, v as i32, 0.).0;
-        //    bone.vertices[v].pos.y += animate!(AnimElement::VertPositionY, v as i32, 0.).0;
-        //}
-
-        let tex_frame = animate!(AnimElement::Texture, -1, 0.).1;
-        if tex_frame != usize::MAX {
-            let prev_tex_idx = anim.keyframes[tex_frame].value;
-            bone.tex_idx = prev_tex_idx as i32;
-        }
+        animate!(AnimElement::PositionX, bone.pos.x, bone.init_pos.x);
+        animate!(AnimElement::PositionY, bone.pos.y, bone.init_pos.y);
+        animate!(AnimElement::Rotation, bone.rot, bone.init_rot);
+        animate!(AnimElement::ScaleX, bone.scale.x, bone.init_scale.x);
+        animate!(AnimElement::ScaleY, bone.scale.y, bone.init_scale.y);
     }
 }
 
@@ -362,28 +358,28 @@ pub fn rotate(point: &Vec2, rot: f32) -> Vec2 {
 }
 
 /// Interpolate an f32 value from the specified keyframe data.
-pub fn animate_f32(
+pub fn interpolate_keyframes(
     element: AnimElement,
     field: &mut f32,
+    init_val: f32,
     keyframes: &Vec<Keyframe>,
     id: i32,
     frame: i32,
-    vert_id: i32,
     blend_frames: i32,
-) -> (usize, usize) {
+) {
     let mut prev = usize::MAX;
     let mut next = usize::MAX;
 
     // get start frame
     for (i, kf) in keyframes.iter().enumerate() {
-        if kf.frame < frame && kf.element == element && kf.bone_id == id && kf.vert_id == vert_id {
+        if kf.frame < frame && kf.element == element && kf.bone_id == id {
             prev = i;
         }
     }
 
     // get end frame
     for (i, kf) in keyframes.iter().enumerate() {
-        if kf.frame >= frame && kf.element == element && kf.bone_id == id && kf.vert_id == vert_id {
+        if kf.frame >= frame && kf.element == element && kf.bone_id == id {
             next = i;
             break;
         }
@@ -396,9 +392,10 @@ pub fn animate_f32(
         next = prev;
     }
 
-    // if both are max, then the frame doesn't exist. Keep original value
+    // if both are max, then the frame doesn't exist. Fallbackt to init value
     if prev == usize::MAX && next == usize::MAX {
-        return (usize::MAX, usize::MAX);
+        *field = interpolate(frame, blend_frames, *field, init_val);
+        return;
     }
 
     let total_frames = keyframes[next].frame - keyframes[prev].frame;
@@ -412,8 +409,6 @@ pub fn animate_f32(
     );
 
     *field = interpolate(current_frame, blend_frames, *field, result);
-
-    (prev, next)
 }
 
 fn interpolate(current: i32, max: i32, start_val: f32, end_val: f32) -> f32 {
