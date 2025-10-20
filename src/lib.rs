@@ -290,7 +290,7 @@ pub struct SkelformRoot {
     pub armature: Armature,
 }
 
-#[derive(serde::Deserialize, Clone, Default, Debug)]
+#[derive(serde::Deserialize, Clone, Default, Debug, PartialEq)]
 pub struct Texture {
     #[serde(default)]
     pub offset: Vec2,
@@ -302,27 +302,60 @@ pub struct Texture {
     pub pixels: Vec<u8>,
 }
 
-/// Process an animation at the specified frame.
+/// Process bones with animations.
 pub fn animate(bones: &mut Vec<Bone>, anim: &Animation, frame: i32, blend_frames: i32) {
     for bone in bones {
         let keyframes = &anim.keyframes;
 
-        // animate bone
         #[rustfmt::skip]
         macro_rules! animate {
-            ($element:expr, $field:expr, $default:expr) => {
-                interpolate_keyframes($element, &mut $field, $default, keyframes, bone.id, frame, blend_frames)
+            ($element:expr, $field:expr) => {
+                interpolate_keyframes($element, &mut $field, keyframes, bone.id, frame, blend_frames)
             };
         }
 
-        animate!(AnimElement::PositionX, bone.pos.x, bone.init_pos.x);
-        animate!(AnimElement::PositionY, bone.pos.y, bone.init_pos.y);
-        animate!(AnimElement::Rotation, bone.rot, bone.init_rot);
-        animate!(AnimElement::ScaleX, bone.scale.x, bone.init_scale.x);
-        animate!(AnimElement::ScaleY, bone.scale.y, bone.init_scale.y);
+        animate!(AnimElement::PositionX, bone.pos.x);
+        animate!(AnimElement::PositionY, bone.pos.y);
+        animate!(AnimElement::Rotation, bone.rot);
+        animate!(AnimElement::ScaleX, bone.scale.x);
+        animate!(AnimElement::ScaleY, bone.scale.y);
     }
 }
 
+/// Reset bones back to default states, if they haven't been animated.
+/// Must be called after `animate()` with the same animations provided.
+/// `frame` must be first anim frame.
+pub fn reset_bones(bones: &mut Vec<Bone>, anims: &Vec<&Animation>, frame: i32, blend_frames: i32) {
+    for bone in bones {
+        macro_rules! attempt {
+            ($eid:expr, $field:expr, $init:expr) => {
+                if !has_kf(bone.id, $eid, anims) {
+                    $field = interpolate(frame, blend_frames, $field, $init)
+                }
+            };
+        }
+
+        attempt!(AnimElement::PositionX, bone.pos.x, bone.init_pos.x);
+        attempt!(AnimElement::PositionY, bone.pos.y, bone.init_pos.y);
+        attempt!(AnimElement::Rotation, bone.rot, bone.init_rot);
+        attempt!(AnimElement::ScaleX, bone.scale.x, bone.init_scale.x);
+        attempt!(AnimElement::ScaleY, bone.scale.y, bone.init_scale.y);
+    }
+}
+
+pub fn has_kf(bone_id: i32, el: AnimElement, anims: &Vec<&Animation>) -> bool {
+    for anim in anims {
+        for kf in &anim.keyframes {
+            if kf.bone_id == bone_id && kf.element == el {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Apply child-parent inheritance.
+/// Must be run twice, before and after `inverse_kinematics()`.
 pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<i32, f32>) {
     for b in 0..bones.len() {
         if bones[b].parent_id != -1 {
@@ -341,16 +374,16 @@ pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<i32, f32>) {
     }
 }
 
-pub fn magnitude(vec: Vec2) -> f32 {
+fn magnitude(vec: Vec2) -> f32 {
     (vec.x * vec.x + vec.y * vec.y).sqrt()
 }
 
-pub fn normalize(vec: Vec2) -> Vec2 {
+fn normalize(vec: Vec2) -> Vec2 {
     let mag = magnitude(vec);
     Vec2::new(vec.x / mag, vec.y / mag)
 }
 
-pub fn rotate(point: &Vec2, rot: f32) -> Vec2 {
+fn rotate(point: &Vec2, rot: f32) -> Vec2 {
     Vec2 {
         x: point.x * rot.cos() - point.y * rot.sin(),
         y: point.x * rot.sin() + point.y * rot.cos(),
@@ -361,7 +394,6 @@ pub fn rotate(point: &Vec2, rot: f32) -> Vec2 {
 pub fn interpolate_keyframes(
     element: AnimElement,
     field: &mut f32,
-    init_val: f32,
     keyframes: &Vec<Keyframe>,
     id: i32,
     frame: i32,
@@ -394,7 +426,6 @@ pub fn interpolate_keyframes(
 
     // if both are max, then the frame doesn't exist. Fallbackt to init value
     if prev == usize::MAX && next == usize::MAX {
-        *field = interpolate(frame, blend_frames, *field, init_val);
         return;
     }
 
@@ -429,6 +460,8 @@ pub fn find_bone(id: i32, bones: &Vec<Bone>) -> Option<&Bone> {
     None
 }
 
+/// Get rotations based on inverse kinematics.
+/// Must be run between two `inheritance()`, with 2nd call using rotations from this.
 pub fn inverse_kinematics(bones: &mut Vec<Bone>, ik_families: &Vec<IkFamily>) -> HashMap<i32, f32> {
     let mut ik_rot: HashMap<i32, f32> = HashMap::new();
 
