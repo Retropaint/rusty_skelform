@@ -22,10 +22,9 @@ dependencies = [
 
 [[package]]
 name = "rusty_skelform"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde",
- "tween",
 ]
 
 [[package]]
@@ -58,12 +57,6 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
-
-[[package]]
-name = "tween"
-version = "2.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a78b9f5f5e343293fb968042de184b8c35b842aa99528e4b3343e0779b3a7a7"
 
 [[package]]
 name = "unicode-ident"

@@ -264,6 +264,8 @@ pub struct IkFamily {
 #[derive(serde::Deserialize, Clone, Debug, Default)]
 pub struct Armature {
     #[serde(default)]
+    pub texture_size: Vec2,
+    #[serde(default)]
     pub bones: Vec<Bone>,
     #[serde(default)]
     pub animations: Vec<Animation>,
@@ -282,12 +284,6 @@ pub struct Armature {
 pub struct Metadata {
     pub last_anim: usize,
     pub last_frame: i32,
-}
-
-#[derive(serde::Deserialize, Clone, Debug)]
-pub struct SkelformRoot {
-    pub texture_size: Vec2,
-    pub armature: Armature,
 }
 
 #[derive(serde::Deserialize, Clone, Default, Debug, PartialEq)]
