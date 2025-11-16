@@ -138,7 +138,7 @@ pub struct Animation {
 pub struct Bone {
     #[serde(default)] 
     pub id: i32,
-    #[serde(default, rename="_name")] 
+    #[serde(default)] 
     pub name: String,
 
     #[serde(default = "default_neg_one")] 
@@ -152,6 +152,8 @@ pub struct Bone {
     pub vertices: Vec<Vertex>,
     #[serde(default)] 
     pub indices: Vec<u32>,
+    #[serde(default)] 
+    pub binds: Vec<BoneBind>,
 
     #[serde(default)] 
     pub rot: f32,
@@ -170,6 +172,24 @@ pub struct Bone {
     pub init_pos: Vec2,    
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, Default, Debug)]
+pub struct BoneBind {
+    #[serde(default = "default_neg_one")]
+    pub bone_id: i32,
+    #[serde(default)]
+    pub is_path: bool,
+    #[serde(default)]
+    pub verts: Vec<BoneBindVert>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, Default, Debug)]
+pub struct BoneBindVert {
+    #[serde(default)]
+    pub id: i32,
+    #[serde(default)]
+    pub weight: f32,
+}
+
 #[derive(
     Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize, Clone, Default, Debug,
 )]
@@ -181,8 +201,6 @@ pub enum AnimElement {
     ScaleX,
     ScaleY,
     Zindex,
-    VertPositionX,
-    VertPositionY,
     Texture,
 }
 
@@ -254,13 +272,24 @@ pub enum JointConstraint {
     CounterClockwise,
 }
 
-#[derive(serde::Deserialize, Clone, Debug)]
-pub struct IkFamily {
-    pub constraint: JointConstraint,
-    pub target_id: i32,
-    pub bone_ids: Vec<i32>,
+#[derive(serde::Serialize, serde::Deserialize, Copy, Clone, Default, PartialEq, Debug)]
+pub enum InverseKinematicsMode {
+    #[default]
+    FABRIK,
+    Arc,
 }
 
+#[derive(serde::Deserialize, Clone, Debug)]
+pub struct IkFamily {
+    #[serde(default)]
+    pub constraint: JointConstraint,
+    #[serde(default)]
+    pub mode: InverseKinematicsMode,
+    #[serde(default)]
+    pub target_id: i32,
+    #[serde(default)]
+    pub bone_ids: Vec<i32>,
+}
 #[derive(serde::Deserialize, Clone, Debug, Default)]
 pub struct Armature {
     #[serde(default)]
@@ -310,11 +339,11 @@ pub fn animate(bones: &mut Vec<Bone>, anim: &Animation, frame: i32, blend_frames
             };
         }
 
-        animate!(AnimElement::PositionX, bone.pos.x);
-        animate!(AnimElement::PositionY, bone.pos.y);
-        animate!(AnimElement::Rotation, bone.rot);
-        animate!(AnimElement::ScaleX, bone.scale.x);
-        animate!(AnimElement::ScaleY, bone.scale.y);
+        animate!(0, bone.pos.x);
+        animate!(1, bone.pos.y);
+        animate!(2, bone.rot);
+        animate!(3, bone.scale.x);
+        animate!(4, bone.scale.y);
     }
 }
 
@@ -331,18 +360,18 @@ pub fn reset_bones(bones: &mut Vec<Bone>, anims: &Vec<&Animation>, frame: i32, b
             };
         }
 
-        attempt!(AnimElement::PositionX, bone.pos.x, bone.init_pos.x);
-        attempt!(AnimElement::PositionY, bone.pos.y, bone.init_pos.y);
-        attempt!(AnimElement::Rotation, bone.rot, bone.init_rot);
-        attempt!(AnimElement::ScaleX, bone.scale.x, bone.init_scale.x);
-        attempt!(AnimElement::ScaleY, bone.scale.y, bone.init_scale.y);
+        attempt!(0, bone.pos.x, bone.init_pos.x);
+        attempt!(1, bone.pos.y, bone.init_pos.y);
+        attempt!(2, bone.rot, bone.init_rot);
+        attempt!(3, bone.scale.x, bone.init_scale.x);
+        attempt!(4, bone.scale.y, bone.init_scale.y);
     }
 }
 
-pub fn has_kf(bone_id: i32, el: AnimElement, anims: &Vec<&Animation>) -> bool {
+pub fn has_kf(bone_id: i32, el: i32, anims: &Vec<&Animation>) -> bool {
     for anim in anims {
         for kf in &anim.keyframes {
-            if kf.bone_id == bone_id && kf.element == el {
+            if kf.bone_id == bone_id && kf.element_id == el {
                 return true;
             }
         }
@@ -370,12 +399,86 @@ pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<i32, f32>) {
     }
 }
 
+pub fn construct_verts(bones: &mut Vec<Bone>) {
+    for b in 0..bones.len() {
+        let bone = bones[b].clone();
+
+        // track vertex init pos for binds
+        let mut init_vert_pos = vec![];
+        for vert in &mut bones[b].vertices {
+            init_vert_pos.push(vert.pos);
+        }
+
+        // move vertex to main bone.
+        // this will be overridden if vertex has a bind.
+        for vert in &mut bones[b].vertices {
+            vert.pos = inherit_vert(vert.pos, &bone);
+        }
+
+        for bi in 0..bones[b].binds.len() {
+            let b_id = bones[b].binds[bi].bone_id;
+            if b_id == -1 {
+                continue;
+            }
+            let bind_bone = bones.iter().find(|bone| bone.id == b_id).unwrap().clone();
+            let bind = bones[b].binds[bi].clone();
+            for v_id in 0..bind.verts.len() {
+                let id = bind.verts[v_id].id as usize;
+
+                if !bind.is_path {
+                    // weights
+                    let vert = &mut bones[b].vertices[id];
+                    let weight = bind.verts[v_id].weight;
+                    let end_pos = inherit_vert(init_vert_pos[id], &bind_bone) - vert.pos;
+                    vert.pos += end_pos * weight;
+                    continue;
+                }
+
+                // pathing:
+                // Bone binds are treated as one continuous line.
+                // Vertices will follow along this path.
+
+                // get previous and next bone
+                let binds = &bones[b].binds;
+                let prev = if bi > 0 { bi - 1 } else { bi };
+                let next = (bi + 1).min(binds.len() - 1);
+                let prev_bone = bones.iter().find(|bone| bone.id == binds[prev].bone_id);
+                let next_bone = bones.iter().find(|bone| bone.id == binds[next].bone_id);
+
+                // get the average of normals between previous bone, this bone, and next bone
+                let prev_dir = bind_bone.pos - prev_bone.unwrap().pos;
+                let next_dir = next_bone.unwrap().pos - bind_bone.pos;
+                let prev_normal = normalize(Vec2::new(-prev_dir.y, prev_dir.x));
+                let next_normal = normalize(Vec2::new(-next_dir.y, next_dir.x));
+                let average = prev_normal + next_normal;
+                let normal_angle = average.y.atan2(average.x);
+
+                // move vertex to bind bone, then just adjust it to 'bounce' off the line's surface
+                let vert = &mut bones[b].vertices[id];
+                vert.pos = init_vert_pos[id] + bind_bone.pos;
+                let rotated = rotate(&(vert.pos - bind_bone.pos), normal_angle);
+                vert.pos = bind_bone.pos + (rotated * bind.verts[v_id].weight);
+            }
+        }
+    }
+}
+
+pub fn inherit_vert(mut pos: Vec2, bone: &Bone) -> Vec2 {
+    pos *= bone.scale;
+    pos = rotate(&pos, bone.rot);
+    pos += bone.pos;
+    pos
+}
+
 fn magnitude(vec: Vec2) -> f32 {
     (vec.x * vec.x + vec.y * vec.y).sqrt()
 }
 
 fn normalize(vec: Vec2) -> Vec2 {
     let mag = magnitude(vec);
+    if mag == 0. {
+        return Vec2::default();
+    }
     Vec2::new(vec.x / mag, vec.y / mag)
 }
 
@@ -388,7 +491,7 @@ fn rotate(point: &Vec2, rot: f32) -> Vec2 {
 
 /// Interpolate an f32 value from the specified keyframe data.
 pub fn interpolate_keyframes(
-    element: AnimElement,
+    element: i32,
     field: &mut f32,
     keyframes: &Vec<Keyframe>,
     id: i32,
@@ -400,14 +503,14 @@ pub fn interpolate_keyframes(
 
     // get start frame
     for (i, kf) in keyframes.iter().enumerate() {
-        if kf.frame < frame && kf.element == element && kf.bone_id == id {
+        if kf.frame < frame && kf.element_id == element && kf.bone_id == id {
             prev = i;
         }
     }
 
     // get end frame
     for (i, kf) in keyframes.iter().enumerate() {
-        if kf.frame >= frame && kf.element == element && kf.bone_id == id {
+        if kf.frame >= frame && kf.element_id == element && kf.bone_id == id {
             next = i;
             break;
         }
@@ -466,83 +569,19 @@ pub fn inverse_kinematics(bones: &mut Vec<Bone>, ik_families: &Vec<IkFamily>) ->
             continue;
         }
         let root = bones[family.bone_ids[0] as usize].pos;
-        let base_line = normalize(bones[family.target_id as usize].pos - root);
-        let base_angle = base_line.y.atan2(base_line.x);
+        let target = bones[family.target_id as usize].pos;
+        let mut family_bones = bones
+            .iter_mut()
+            .filter(|bone| family.bone_ids.contains(&bone.id))
+            .collect::<Vec<&mut Bone>>();
 
-        // forward reaching
-        let mut next_pos = bones[family.target_id as usize].pos;
-        let mut next_length = 0.;
-        for i in (0..family.bone_ids.len()).rev() {
-            macro_rules! bone {
-                () => {
-                    bones[family.bone_ids[i] as usize]
-                };
-            }
-
-            let mut length = Vec2::new(0., 0.);
-            if i != family.bone_ids.len() - 1 {
-                length = normalize(next_pos - bone!().pos) * next_length;
-            }
-
-            if i != 0 {
-                let next_bone = &bones[family.bone_ids[i - 1] as usize];
-                next_length = magnitude(bone!().pos - next_bone.pos);
-            }
-            bone!().pos = next_pos - length;
-
-            next_pos = bone!().pos;
-        }
-
-        // backward reaching
-        let mut prev_pos = root;
-        let mut prev_length = 0.;
-        for i in 0..family.bone_ids.len() {
-            if family.target_id == -1 {
-                continue;
-            }
-            macro_rules! bone {
-                () => {
-                    bones[family.bone_ids[i] as usize]
-                };
-            }
-
-            let mut length = Vec2::new(0., 0.);
-            if i != 0 {
-                length = normalize(prev_pos - bone!().pos) * prev_length;
-            }
-
-            if i != family.bone_ids.len() - 1 {
-                let prev_bone = &bones[family.bone_ids[i + 1] as usize];
-                prev_length = magnitude(bone!().pos - prev_bone.pos);
-            }
-
-            bone!().pos = prev_pos - length;
-
-            if i != 0
-                && i != family.bone_ids.len() - 1
-                && family.constraint != JointConstraint::None
-            {
-                let joint_line = normalize(prev_pos - bone!().pos);
-                let joint_angle = joint_line.y.atan2(joint_line.x) - base_angle;
-
-                let constraint_min;
-                let constraint_max;
-                if family.constraint == JointConstraint::Clockwise {
-                    constraint_min = -3.14;
-                    constraint_max = 0.;
-                } else {
-                    constraint_min = 0.;
-                    constraint_max = 3.14;
-                }
-
-                if joint_angle > constraint_max || joint_angle < constraint_min {
-                    let push_angle = -joint_angle * 2.;
-                    let new_point = rotate(&(bone!().pos - prev_pos), push_angle);
-                    bone!().pos = new_point + prev_pos;
+        match family.mode {
+            InverseKinematicsMode::FABRIK => {
+                for _ in 0..10 {
+                    fabrik(&mut family_bones, root, target);
                 }
             }
-
-            prev_pos = bone!().pos;
+            InverseKinematicsMode::Arc => arc_ik(&mut family_bones, root, target),
         }
 
         let end_bone = &bones[*family.bone_ids.last().unwrap() as usize];
@@ -551,28 +590,98 @@ pub fn inverse_kinematics(bones: &mut Vec<Bone>, ik_families: &Vec<IkFamily>) ->
             if i == family.bone_ids.len() - 1 {
                 continue;
             }
-            macro_rules! bone {
-                () => {
-                    bones[family.bone_ids[i] as usize]
-                };
-            }
+            let bone = &mut bones[family.bone_ids[i] as usize];
 
-            let dir = tip_pos - bone!().pos;
-            bone!().rot = dir.y.atan2(dir.x);
-            tip_pos = bone!().pos;
+            let dir = tip_pos - bone.pos;
+            bone.rot = dir.y.atan2(dir.x);
+            tip_pos = bone.pos;
         }
-    }
 
-    for family in ik_families {
-        for i in 0..family.bone_ids.len() {
-            if i == family.bone_ids.len() - 1 {
+        let joint_dir = normalize(
+            bones[family.bone_ids[1] as usize].pos - bones[family.bone_ids[0] as usize].pos,
+        );
+        let base_dir = normalize(target - root);
+        let dir = joint_dir.x * base_dir.y - base_dir.x * joint_dir.y;
+        let base_angle = base_dir.y.atan2(base_dir.x);
+
+        let cw = family.constraint == JointConstraint::Clockwise && dir > 0.;
+        let ccw = family.constraint == JointConstraint::CounterClockwise && dir < 0.;
+        if ccw || cw {
+            for i in &family.bone_ids {
+                bones[*i as usize].rot = -bones[*i as usize].rot + base_angle * 2.;
+            }
+        }
+        for b in 0..family.bone_ids.len() {
+            if b == family.bone_ids.len() - 1 {
                 continue;
             }
-            ik_rot.insert(family.bone_ids[i], bones[family.bone_ids[i] as usize].rot);
+            ik_rot.insert(family.bone_ids[b], bones[family.bone_ids[b] as usize].rot);
         }
     }
 
     ik_rot
+}
+
+// https://www.youtube.com/watch?v=NfuO66wsuRg
+pub fn fabrik(bones: &mut Vec<&mut Bone>, root: Vec2, target: Vec2) {
+    // forward-reaching
+    let mut next_pos: Vec2 = target;
+    let mut next_length = 0.;
+    for b in (0..bones.len()).rev() {
+        let mut length = normalize(next_pos - bones[b].pos) * next_length;
+        if length.x.is_nan() {
+            length = Vec2::new(0., 0.);
+        }
+        if b != 0 {
+            next_length = magnitude(bones[b].pos - bones[b - 1].pos);
+        }
+        bones[b].pos = next_pos - length;
+        next_pos = bones[b].pos;
+    }
+
+    // backward-reaching
+    let mut prev_pos: Vec2 = root;
+    let mut prev_length = 0.;
+    for b in 0..bones.len() {
+        let mut length = normalize(prev_pos - bones[b].pos) * prev_length;
+        if length.x.is_nan() {
+            length = Vec2::new(0., 0.);
+        }
+        if b != bones.len() - 1 {
+            prev_length = magnitude(bones[b].pos - bones[b + 1].pos);
+        }
+        bones[b].pos = prev_pos - length;
+        prev_pos = bones[b].pos;
+    }
+}
+
+pub fn arc_ik(bones: &mut Vec<&mut Bone>, root: Vec2, target: Vec2) {
+    // determine where bones will be on the arc line (ranging from 0 to 1)
+    let mut dist: Vec<f32> = vec![0.];
+
+    let max_length = magnitude(bones.last().unwrap().pos - root);
+    let mut curr_length = 0.;
+    for b in 1..bones.len() {
+        let length = magnitude(bones[b].pos - bones[b - 1].pos);
+        curr_length += length;
+        dist.push(curr_length / max_length);
+    }
+
+    let base = target - root;
+    let base_angle = base.y.atan2(base.x);
+    let base_mag = magnitude(base).min(max_length);
+    let peak = max_length / base_mag;
+    let valley = base_mag / max_length;
+
+    for b in 1..bones.len() {
+        bones[b].pos = Vec2::new(
+            bones[b].pos.x * valley,
+            root.y + (1. - peak) * (dist[b] * 3.14).sin() * base_mag,
+        );
+
+        let rotated = rotate(&(bones[b].pos - root), base_angle);
+        bones[b].pos = rotated + root;
+    }
 }
 
 pub fn format_frame(
