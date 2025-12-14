@@ -10,6 +10,7 @@ use std::{
 pub struct Vertex {
     pub pos: Vec2,
     pub uv: Vec2,
+    pub init_pos: Vec2,
 }
 
 #[derive(serde::Deserialize, Clone, Debug, Default, Copy)]
@@ -103,26 +104,6 @@ impl PartialEq for Vec2 {
         return self.x == other.x && self.y == other.y;
     }
 }
-impl std::fmt::Display for Vec2 {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let decimal_places = 3;
-
-        let mut p = 0;
-        let mut dp = 1.;
-        while p < decimal_places {
-            dp *= 10.;
-            p += 1;
-        }
-
-        write!(
-            f,
-            "{}, {}",
-            (self.x * dp).trunc() / dp,
-            (self.y * dp).trunc() / dp
-        )
-    }
-}
-
 #[derive(serde::Deserialize, Clone, Default, Debug)]
 #[rustfmt::skip]
 pub struct Animation {
@@ -134,18 +115,15 @@ pub struct Animation {
     pub keyframes: Vec<Keyframe>,
 }
 #[derive(serde::Deserialize, Clone, Debug, Default)]
-#[rustfmt::skip]
 pub struct Bone {
-    #[serde(default)] 
+    #[serde(default)]
     pub id: i32,
-    #[serde(default)] 
+    #[serde(default)]
     pub name: String,
-    #[serde(default)] 
+    #[serde(default)]
     pub parent_id: i32,
-    #[serde(default)] 
-    pub style_ids: Vec<i32>,
-    #[serde(default)] 
-    pub tex_idx: i32,
+    #[serde(default)]
+    pub tex: String,
 
     #[serde(default)]
     pub ik_family_id: i32,
@@ -160,37 +138,37 @@ pub struct Bone {
     #[serde(default)]
     pub ik_target_id: i32,
     #[serde(default)]
-    pub ik_bone_ids: Vec<i32>,    
+    pub ik_bone_ids: Vec<i32>,
 
-    #[serde(default)] 
+    #[serde(default)]
     pub vertices: Vec<Vertex>,
-    #[serde(default)] 
+    #[serde(default)]
     pub indices: Vec<u32>,
-    #[serde(default)] 
+    #[serde(default)]
     pub binds: Vec<BoneBind>,
 
-    #[serde(default)] 
+    #[serde(default)]
     pub rot: f32,
-    #[serde(default)] 
+    #[serde(default)]
     pub scale: Vec2,
-    #[serde(default)] 
+    #[serde(default)]
     pub pos: Vec2,
-    #[serde(default)] 
+    #[serde(default)]
     pub zindex: f32,
 
-    #[serde(default)] 
+    #[serde(default)]
     pub init_rot: f32,
-    #[serde(default)] 
+    #[serde(default)]
     pub init_scale: Vec2,
-    #[serde(default)] 
-    pub init_pos: Vec2,    
-    #[serde(default)] 
-    pub init_constraint: i32,    
+    #[serde(default)]
+    pub init_pos: Vec2,
+    #[serde(default)]
+    pub init_ik_constraint: i32,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, Default, Debug)]
 pub struct BoneBind {
-    #[serde(default = "default_neg_one")]
+    #[serde(default)]
     pub bone_id: i32,
     #[serde(default)]
     pub is_path: bool,
@@ -234,6 +212,8 @@ pub struct Keyframe {
     #[serde(default)]
     pub value: f32,
     #[serde(default)]
+    pub value_str: String,
+    #[serde(default)]
     pub transition: Transition,
     #[serde(skip)]
     pub label_top: f32,
@@ -271,7 +251,7 @@ pub struct AnimField {
 pub struct Style {
     #[serde(default)]
     pub id: i32,
-    #[serde(default, rename = "_name")]
+    #[serde(default)]
     pub name: String,
     #[serde(skip)]
     pub active: bool,
@@ -295,9 +275,15 @@ pub enum InverseKinematicsMode {
 }
 
 #[derive(serde::Deserialize, Clone, Debug, Default)]
-pub struct Armature {
+pub struct TexAtlas {
     #[serde(default)]
-    pub texture_size: Vec2,
+    pub filename: String,
+    #[serde(default)]
+    pub size: Vec2,
+}
+
+#[derive(serde::Deserialize, Clone, Debug, Default)]
+pub struct Armature {
     #[serde(default)]
     pub ik_root_ids: Vec<i32>,
     #[serde(default)]
@@ -308,6 +294,8 @@ pub struct Armature {
     pub textures: Vec<Texture>,
     #[serde(default)]
     pub styles: Vec<Style>,
+    #[serde(default)]
+    pub atlases: Vec<TexAtlas>,
     #[serde(skip)]
     pub metadata: Metadata,
 }
@@ -325,61 +313,91 @@ pub struct Texture {
     pub offset: Vec2,
     #[serde(default)]
     pub size: Vec2,
-    #[serde(default, rename = "_name")]
+    #[serde(default)]
     pub name: String,
-    #[serde(skip)]
-    pub pixels: Vec<u8>,
+    #[serde(default)]
+    pub atlas_idx: i32,
 }
 
 /// Process bones with animations.
-pub fn animate(bones: &mut Vec<Bone>, anim: &Animation, frame: i32, blend_frames: i32) {
+pub fn animate(
+    bones: &mut Vec<Bone>,
+    anims: &Vec<&Animation>,
+    frames: &Vec<i32>,
+    blend_frames: &Vec<i32>,
+) {
+    for a in 0..anims.len() {
+        for b in 0..bones.len() {
+            let keyframes = &anims[a].keyframes;
+            let b_id = bones[b].id;
+            interpolate_bone(&mut bones[b], keyframes, b_id, frames[a], blend_frames[a]);
+        }
+    }
+
     for bone in bones {
-        let keyframes = &anim.keyframes;
-
-        #[rustfmt::skip]
-        macro_rules! animate {
-            ($element:expr, $field:expr) => {
-                interpolate_keyframes($element, &mut $field, keyframes, bone.id, frame, blend_frames)
-            };
-        }
-
-        animate!(0, bone.pos.x);
-        animate!(1, bone.pos.y);
-        animate!(2, bone.rot);
-        animate!(3, bone.scale.x);
-        animate!(4, bone.scale.y);
-        let prev_frame = get_prev_frame(keyframes, frame, 7, bone.id);
-        if prev_frame != usize::MAX {
-            bone.ik_constraint = keyframes[prev_frame].value as i32;
-        }
+        reset_bone(bone, frames[0], blend_frames[0], anims);
     }
 }
 
-/// Reset bones back to default states, if they haven't been animated.
-/// Must be called after `animate()` with the same animations provided.
-/// `frame` must be first anim frame.
-pub fn reset_bones(bones: &mut Vec<Bone>, anims: &Vec<&Animation>, frame: i32, blend_frames: i32) {
-    for bone in bones {
-        macro_rules! attempt {
-            ($eid:expr, $field:expr, $init:expr) => {
-                if !has_kf(bone.id, $eid, anims) {
-                    $field = interpolate(frame, blend_frames, $field, $init)
-                }
-            };
-        }
+pub fn interpolate_bone(
+    bone: &mut Bone,
+    keyframes: &Vec<Keyframe>,
+    bone_id: i32,
+    frame: i32,
+    blend_frame: i32,
+) {
+    interpolate_keyframes(0, &mut bone.pos.x, keyframes, bone_id, frame, blend_frame);
+    interpolate_keyframes(1, &mut bone.pos.y, keyframes, bone_id, frame, blend_frame);
+    interpolate_keyframes(2, &mut bone.rot, keyframes, bone_id, frame, blend_frame);
+    interpolate_keyframes(3, &mut bone.scale.x, keyframes, bone_id, frame, blend_frame);
+    interpolate_keyframes(4, &mut bone.scale.y, keyframes, bone_id, frame, blend_frame);
+    let prev_frame = get_prev_frame(keyframes, frame, 7, bone.id);
+    if prev_frame != usize::MAX {
+        bone.ik_constraint = keyframes[prev_frame].value as i32;
+    }
 
-        attempt!(0, bone.pos.x, bone.init_pos.x);
-        attempt!(1, bone.pos.y, bone.init_pos.y);
-        attempt!(2, bone.rot, bone.init_rot);
-        attempt!(3, bone.scale.x, bone.init_scale.x);
-        attempt!(4, bone.scale.y, bone.init_scale.y);
-        if !has_kf(bone.id, 7, anims) {
-            bone.ik_constraint = bone.init_constraint;
-        }
+    let prev_frame = get_prev_frame(keyframes, frame, 6, bone.id);
+    if prev_frame != usize::MAX {
+        bone.tex = keyframes[prev_frame].value_str.clone();
     }
 }
 
-pub fn has_kf(bone_id: i32, el: i32, anims: &Vec<&Animation>) -> bool {
+pub fn reset_bone(bone: &mut Bone, frame: i32, blend_frame: i32, anims: &Vec<&Animation>) {
+    if !is_animated(bone.id, 0, anims) {
+        bone.pos.x = interpolate(frame, blend_frame, bone.pos.x, bone.init_pos.x)
+    }
+    if !is_animated(bone.id, 1, anims) {
+        bone.pos.y = interpolate(frame, blend_frame, bone.pos.y, bone.init_pos.y)
+    }
+    if !is_animated(bone.id, 2, anims) {
+        bone.rot = interpolate(frame, blend_frame, bone.rot, bone.init_rot)
+    }
+    if !is_animated(bone.id, 3, anims) {
+        bone.scale.x = interpolate(frame, blend_frame, bone.scale.x, bone.init_scale.x)
+    }
+    if !is_animated(bone.id, 4, anims) {
+        bone.scale.y = interpolate(frame, blend_frame, bone.scale.y, bone.init_scale.y)
+    }
+    if !is_animated(bone.id, 7, anims) {
+        bone.ik_constraint = bone.init_ik_constraint;
+    }
+}
+
+pub fn setup_bone_textures(bones: &mut Vec<Bone>, styles: &Vec<&Style>) -> HashMap<i32, Texture> {
+    let mut final_textures: HashMap<i32, Texture> = HashMap::new();
+    for bone in bones {
+        for style in styles {
+            if let Some(tex) = style.textures.iter().find(|t| t.name == bone.tex) {
+                final_textures.insert(bone.id, tex.clone());
+                break;
+            }
+        }
+    }
+
+    final_textures
+}
+
+pub fn is_animated(bone_id: i32, el: i32, anims: &Vec<&Animation>) -> bool {
     for anim in anims {
         for kf in &anim.keyframes {
             if kf.bone_id == bone_id && kf.element == el {
@@ -410,15 +428,22 @@ pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<i32, f32>) {
     }
 }
 
+pub fn construct(armature: &Armature) -> Vec<Bone> {
+    let mut inh_bones = armature.bones.clone();
+    inheritance(&mut inh_bones, HashMap::new());
+    let ik_rots = inverse_kinematics(&mut inh_bones, armature.ik_root_ids.clone());
+
+    let mut final_bones = armature.bones.clone();
+    inheritance(&mut final_bones, ik_rots);
+
+    construct_verts(&mut final_bones);
+
+    final_bones
+}
+
 pub fn construct_verts(bones: &mut Vec<Bone>) {
     for b in 0..bones.len() {
         let bone = bones[b].clone();
-
-        // track vertex init pos for binds
-        let mut init_vert_pos = vec![];
-        for vert in &mut bones[b].vertices {
-            init_vert_pos.push(vert.pos);
-        }
 
         // move vertex to main bone.
         // this will be overridden if vertex has a bind.
@@ -433,14 +458,14 @@ pub fn construct_verts(bones: &mut Vec<Bone>) {
             }
             let bind_bone = bones.iter().find(|bone| bone.id == b_id).unwrap().clone();
             let bind = bones[b].binds[bi].clone();
-            for v_id in 0..bind.verts.len() {
-                let id = bind.verts[v_id].id as usize;
+            for v in 0..bind.verts.len() {
+                let vert_id = bind.verts[v].id as usize;
 
                 if !bind.is_path {
                     // weights
-                    let vert = &mut bones[b].vertices[id];
-                    let weight = bind.verts[v_id].weight;
-                    let end_pos = inherit_vert(init_vert_pos[id], &bind_bone) - vert.pos;
+                    let vert = &mut bones[b].vertices[vert_id];
+                    let weight = bind.verts[v].weight;
+                    let end_pos = inherit_vert(vert.init_pos, &bind_bone) - vert.pos;
                     vert.pos += end_pos * weight;
                     continue;
                 }
@@ -465,10 +490,10 @@ pub fn construct_verts(bones: &mut Vec<Bone>) {
                 let normal_angle = average.y.atan2(average.x);
 
                 // move vertex to bind bone, then just adjust it to 'bounce' off the line's surface
-                let vert = &mut bones[b].vertices[id];
-                vert.pos = init_vert_pos[id] + bind_bone.pos;
+                let vert = &mut bones[b].vertices[vert_id];
+                vert.pos = vert.init_pos + bind_bone.pos;
                 let rotated = rotate(&(vert.pos - bind_bone.pos), normal_angle);
-                vert.pos = bind_bone.pos + (rotated * bind.verts[v_id].weight);
+                vert.pos = bind_bone.pos + (rotated * bind.verts[v].weight);
             }
         }
     }
@@ -503,7 +528,7 @@ fn rotate(point: &Vec2, rot: f32) -> Vec2 {
 fn get_prev_frame(keyframes: &Vec<Keyframe>, frame: i32, element: i32, id: i32) -> usize {
     let mut prev = usize::MAX;
     for (i, kf) in keyframes.iter().enumerate() {
-        if kf.frame < frame && kf.element == element && kf.bone_id == id {
+        if kf.frame <= frame && kf.element == element && kf.bone_id == id {
             prev = i;
         }
     }
@@ -512,7 +537,7 @@ fn get_prev_frame(keyframes: &Vec<Keyframe>, frame: i32, element: i32, id: i32) 
 
 fn get_next_frame(keyframes: &Vec<Keyframe>, frame: i32, element: i32, id: i32) -> usize {
     for (i, kf) in keyframes.iter().enumerate() {
-        if kf.frame >= frame && kf.element == element && kf.bone_id == id {
+        if kf.frame > frame && kf.element == element && kf.bone_id == id {
             return i;
         }
     }
@@ -565,15 +590,6 @@ fn interpolate(current: i32, max: i32, start_val: f32, end_val: f32) -> f32 {
     start_val + (end * interp)
 }
 
-pub fn find_bone(id: i32, bones: &Vec<Bone>) -> Option<&Bone> {
-    for bone in bones {
-        if bone.id == id {
-            return Some(bone);
-        }
-    }
-    None
-}
-
 /// Get rotations based on inverse kinematics.
 /// Must be run between two `inheritance()`, with 2nd call using rotations from this.
 pub fn inverse_kinematics(bones: &mut Vec<Bone>, ik_root_ids: Vec<i32>) -> HashMap<i32, f32> {
@@ -587,10 +603,10 @@ pub fn inverse_kinematics(bones: &mut Vec<Bone>, ik_root_ids: Vec<i32>) -> HashM
         }
         let root = bones[family.ik_bone_ids[0] as usize].pos;
         let target = bones[family.ik_target_id as usize].pos;
-        let mut family_bones = bones
+        let mut family_bones: Vec<&mut Bone> = bones
             .iter_mut()
             .filter(|bone| family.ik_bone_ids.contains(&bone.id))
-            .collect::<Vec<&mut Bone>>();
+            .collect();
 
         if family.ik_mode == 0 {
             for _ in 0..10 {
@@ -600,33 +616,9 @@ pub fn inverse_kinematics(bones: &mut Vec<Bone>, ik_root_ids: Vec<i32>) -> HashM
             arc_ik(&mut family_bones, root, target)
         }
 
-        let end_bone = &bones[*family.ik_bone_ids.last().unwrap() as usize];
-        let mut tip_pos = end_bone.pos;
-        for i in (0..family.ik_bone_ids.len()).rev() {
-            if i == family.ik_bone_ids.len() - 1 {
-                continue;
-            }
-            let bone = &mut bones[family.ik_bone_ids[i] as usize];
+        point_bones(bones, family.clone());
 
-            let dir = tip_pos - bone.pos;
-            bone.rot = dir.y.atan2(dir.x);
-            tip_pos = bone.pos;
-        }
-
-        let joint_dir = normalize(
-            bones[family.ik_bone_ids[1] as usize].pos - bones[family.ik_bone_ids[0] as usize].pos,
-        );
-        let base_dir = normalize(target - root);
-        let dir = joint_dir.x * base_dir.y - base_dir.x * joint_dir.y;
-        let base_angle = base_dir.y.atan2(base_dir.x);
-
-        let cw = family.ik_constraint == 1 && dir > 0.;
-        let ccw = family.ik_constraint == 2 && dir < 0.;
-        if ccw || cw {
-            for i in &family.ik_bone_ids {
-                bones[*i as usize].rot = -bones[*i as usize].rot + base_angle * 2.;
-            }
-        }
+        apply_constraints(bones, family.clone());
 
         for b in 0..family.ik_bone_ids.len() {
             if b == family.ik_bone_ids.len() - 1 {
@@ -640,6 +632,38 @@ pub fn inverse_kinematics(bones: &mut Vec<Bone>, ik_root_ids: Vec<i32>) -> HashM
     }
 
     ik_rot
+}
+
+pub fn point_bones(bones: &mut Vec<Bone>, family: Bone) {
+    let end_bone = &bones[*family.ik_bone_ids.last().unwrap() as usize];
+    let mut tip_pos = end_bone.pos;
+    for i in (0..family.ik_bone_ids.len()).rev() {
+        if i == family.ik_bone_ids.len() - 1 {
+            continue;
+        }
+        let bone = &mut bones[family.ik_bone_ids[i] as usize];
+
+        let dir = tip_pos - bone.pos;
+        bone.rot = dir.y.atan2(dir.x);
+        tip_pos = bone.pos;
+    }
+}
+
+pub fn apply_constraints(bones: &mut Vec<Bone>, family: Bone) {
+    let root = bones[family.ik_bone_ids[0] as usize].pos;
+    let target = bones[family.ik_target_id as usize].pos;
+    let joint_dir = normalize(bones[family.ik_bone_ids[1] as usize].pos - root);
+    let base_dir = normalize(target - root);
+    let dir = joint_dir.x * base_dir.y - base_dir.x * joint_dir.y;
+    let base_angle = base_dir.y.atan2(base_dir.x);
+
+    let cw = family.ik_constraint == 1 && dir > 0.;
+    let ccw = family.ik_constraint == 2 && dir < 0.;
+    if ccw || cw {
+        for i in &family.ik_bone_ids {
+            bones[*i as usize].rot = -bones[*i as usize].rot + base_angle * 2.;
+        }
+    }
 }
 
 // https://www.youtube.com/watch?v=NfuO66wsuRg
@@ -704,15 +728,10 @@ pub fn arc_ik(bones: &mut Vec<&mut Bone>, root: Vec2, target: Vec2) {
     }
 }
 
-pub fn format_frame(
-    mut frame: i32,
-    animation: &Animation,
-    reverse: bool,
-    should_loop: bool,
-) -> i32 {
+pub fn format_frame(mut frame: i32, animation: &Animation, reverse: bool, is_loop: bool) -> i32 {
     let last_frame = animation.keyframes.last().unwrap().frame;
 
-    if should_loop {
+    if is_loop {
         frame %= last_frame + 1
     }
 
@@ -723,16 +742,21 @@ pub fn format_frame(
     frame
 }
 
-pub fn time_frame(time: Instant, animation: &Animation, reverse: bool, should_loop: bool) -> i32 {
+pub fn time_frame(time: Instant, animation: &Animation, reverse: bool, is_loop: bool) -> i32 {
     let elapsed = time.elapsed().as_millis() as f32 / 1e3 as f32;
     let frametime = 1. / animation.fps as f32;
 
     let mut frame = (elapsed / frametime) as i32;
-    frame = format_frame(frame, animation, reverse, should_loop);
+    frame = format_frame(frame, animation, reverse, is_loop);
 
     frame
 }
 
-fn default_neg_one() -> i32 {
-    -1
+/// Flips the bone if either if its scale is negative.
+pub fn check_flip(bone: &mut Bone, scale: Vec2) {
+    let both = scale.x < 0. && scale.y < 0.;
+    let either = scale.x < 0. || scale.y < 0.;
+    if either && !both {
+        bone.rot = -bone.rot;
+    }
 }
