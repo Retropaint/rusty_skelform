@@ -9,6 +9,14 @@ pub struct Vertex {
 }
 
 #[derive(serde::Deserialize, Clone, Debug, Default, Copy)]
+pub struct Tint {
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32,
+}
+
+#[derive(serde::Deserialize, Clone, Debug, Default, Copy)]
 pub struct Vec2 {
     pub x: f32,
     pub y: f32,
@@ -113,6 +121,8 @@ pub struct Bone {
     pub name: String,
     pub parent_id: i32,
     pub tex: String,
+    pub tint: Tint,
+    pub hidden: bool,
 
     pub ik_family_id: i32,
     pub ik_constraint: String,
@@ -127,12 +137,17 @@ pub struct Bone {
     pub rot: f32,
     pub scale: Vec2,
     pub pos: Vec2,
-    pub zindex: f32,
+    pub zindex: i32,
 
     pub init_rot: f32,
     pub init_scale: Vec2,
     pub init_pos: Vec2,
+    pub init_tex: String,
+    pub init_zindex: i32,
+    pub init_tint: Tint,
     pub init_ik_constraint: String,
+    pub init_ik_mode: String,
+    pub init_hidden: bool,
 }
 
 #[derive(serde::Deserialize, Clone, PartialEq, Default, Debug)]
@@ -268,77 +283,63 @@ pub fn interpolate_bone(
     frame: u32,
     blend_frame: u32,
 ) {
-    interpolate_keyframes(
-        "PositionX",
-        &mut bone.pos.x,
-        keyframes,
-        bone_id,
-        frame,
-        blend_frame,
-    );
-    interpolate_keyframes(
-        "PositionY",
-        &mut bone.pos.y,
-        keyframes,
-        bone_id,
-        frame,
-        blend_frame,
-    );
-    interpolate_keyframes(
-        "Rotation",
-        &mut bone.rot,
-        keyframes,
-        bone_id,
-        frame,
-        blend_frame,
-    );
-    interpolate_keyframes(
-        "ScaleX",
-        &mut bone.scale.x,
-        keyframes,
-        bone_id,
-        frame,
-        blend_frame,
-    );
-    interpolate_keyframes(
-        "ScaleY",
-        &mut bone.scale.y,
-        keyframes,
-        bone_id,
-        frame,
-        blend_frame,
-    );
-    let prev_frame = get_prev_frame(keyframes, frame, "IkConstraint", bone.id);
-    if prev_frame != usize::MAX {
-        bone.ik_constraint = keyframes[prev_frame].value_str.clone();
-    }
+    let bf = blend_frame;
+    interpolate_keyframes("PositionX", &mut bone.pos.x, keyframes, bone_id, frame, bf);
+    interpolate_keyframes("PositionY", &mut bone.pos.y, keyframes, bone_id, frame, bf);
+    interpolate_keyframes("Rotation", &mut bone.rot, keyframes, bone_id, frame, bf);
+    interpolate_keyframes("ScaleX", &mut bone.scale.x, keyframes, bone_id, frame, bf);
+    interpolate_keyframes("ScaleY", &mut bone.scale.y, keyframes, bone_id, frame, bf);
+    interpolate_keyframes("TintR", &mut bone.tint.r, keyframes, bone_id, frame, bf);
+    interpolate_keyframes("TintG", &mut bone.tint.g, keyframes, bone_id, frame, bf);
+    interpolate_keyframes("TintB", &mut bone.tint.b, keyframes, bone_id, frame, bf);
+    interpolate_keyframes("TintA", &mut bone.tint.a, keyframes, bone_id, frame, bf);
 
-    let prev_frame = get_prev_frame(keyframes, frame, "Texture", bone.id);
+    macro_rules! prev_frame {
+        ($element:expr, $field:expr, $kf_value:ident, $value_type:tt) => {
+            let prev_frame = get_prev_frame(keyframes, frame, $element, bone.id);
+            if prev_frame != usize::MAX {
+                $field = keyframes[prev_frame].$kf_value.clone() as $value_type;
+            }
+        };
+    }
+    prev_frame!("Texture", bone.tex, value_str, String);
+    prev_frame!("Zindex", bone.zindex, value, i32);
+    prev_frame!("IkMode", bone.ik_mode, value_str, String);
+    prev_frame!("IkConstraint", bone.ik_constraint, value_str, String);
+
+    let prev_frame = get_prev_frame(keyframes, frame, "Hidden", bone.id);
     if prev_frame != usize::MAX {
-        bone.tex = keyframes[prev_frame].value_str.clone();
+        bone.hidden = keyframes[prev_frame].value == 1.;
     }
 }
 
 pub fn reset_bone(bone: &mut Bone, frame: u32, blend_frame: u32, anims: &Vec<&Animation>) {
     let z = Vec2::new(0., 0.);
-    if !is_animated(bone.id, "PositionX", anims) {
-        bone.pos.x = interpolate(frame, blend_frame, bone.pos.x, bone.init_pos.x, z, z);
+    macro_rules! interp {
+        ($element:expr, $field:expr, $init_field:expr) => {
+            if !is_animated(bone.id, $element, anims) {
+                $field = interpolate(frame, blend_frame, $field, $init_field, z, z);
+            }
+        };
     }
-    if !is_animated(bone.id, "PositionY", anims) {
-        bone.pos.y = interpolate(frame, blend_frame, bone.pos.y, bone.init_pos.y, z, z)
+    interp!("PositionX", bone.pos.x, bone.init_pos.x);
+    interp!("PositionY", bone.pos.y, bone.init_pos.y);
+    interp!("Rotation", bone.rot, bone.init_rot);
+    interp!("ScaleX", bone.scale.x, bone.init_scale.x);
+    interp!("ScaleY", bone.scale.y, bone.init_scale.y);
+
+    macro_rules! hard_interp {
+        ($element:expr, $field:expr, $init_field:expr) => {
+            if !is_animated(bone.id, $element, anims) {
+                $field = $init_field.clone();
+            }
+        };
     }
-    if !is_animated(bone.id, "Rotation", anims) {
-        bone.rot = interpolate(frame, blend_frame, bone.rot, bone.init_rot, z, z)
-    }
-    if !is_animated(bone.id, "ScaleX", anims) {
-        bone.scale.x = interpolate(frame, blend_frame, bone.scale.x, bone.init_scale.x, z, z)
-    }
-    if !is_animated(bone.id, "ScaleY", anims) {
-        bone.scale.y = interpolate(frame, blend_frame, bone.scale.y, bone.init_scale.y, z, z)
-    }
-    if !is_animated(bone.id, "IkConstraint", anims) {
-        bone.ik_constraint = bone.init_ik_constraint.clone();
-    }
+    hard_interp!("Texture", bone.tex, bone.init_tex);
+    hard_interp!("Zindex", bone.zindex, bone.init_zindex);
+    hard_interp!("Hidden", bone.hidden, bone.init_hidden);
+    hard_interp!("IkMode", bone.ik_mode, bone.init_ik_mode);
+    hard_interp!("IkConstraint", bone.ik_constraint, bone.init_ik_constraint);
 }
 
 pub fn get_bone_texture(bone_tex: String, styles: &Vec<&Style>) -> Option<Texture> {
