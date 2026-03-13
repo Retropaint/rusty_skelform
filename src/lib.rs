@@ -241,6 +241,7 @@ pub struct Armature {
     pub ik_root_ids: Vec<u32>,
     pub baked_ik: bool,
     pub bones: Vec<Bone>,
+    pub cached_bones: Vec<Bone>,
     pub animations: Vec<Animation>,
     pub textures: Vec<Texture>,
     pub styles: Vec<Style>,
@@ -367,13 +368,16 @@ pub fn is_animated(bone_id: u32, el: &str, anims: &Vec<&Animation>) -> bool {
 pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<u32, f32>) {
     for b in 0..bones.len() {
         if bones[b].parent_id != -1 {
-            let parent = bones[bones[b].parent_id as usize].clone();
+            let parent = &bones[bones[b].parent_id as usize];
+            let parent_pos = parent.pos;
+            let parent_rot = parent.rot;
+            let parent_scale = parent.scale;
 
             bones[b].rot += parent.rot;
-            bones[b].scale *= parent.scale;
-            bones[b].pos *= parent.scale;
-            bones[b].pos = rotate(&bones[b].pos, parent.rot);
-            bones[b].pos += parent.pos;
+            bones[b].scale *= parent_scale;
+            bones[b].pos *= parent_scale;
+            bones[b].pos = rotate(&bones[b].pos, parent_rot);
+            bones[b].pos += parent_pos;
         }
 
         if let Some(ik_rot) = ik_rots.get(&(b as u32)) {
@@ -382,29 +386,42 @@ pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<u32, f32>) {
     }
 }
 
-pub fn construct(armature: &Armature) -> Vec<Bone> {
-    let mut ik_rots = HashMap::new();
-    let mut final_bones = armature.bones.clone();
+/// Always run this before `inheritance()`.`
+pub fn reset_inheritance(cached_bones: &mut Vec<Bone>, bones: &Vec<Bone>) {
+    for b in 0..bones.len() {
+        cached_bones[b].pos = bones[b].pos;
+        cached_bones[b].rot = bones[b].rot;
+        cached_bones[b].scale = bones[b].scale;
+    }
+}
 
-    if !armature.baked_ik {
-        let mut inh_bones = armature.bones.clone();
-        inheritance(&mut inh_bones, HashMap::new());
-        ik_rots = inverse_kinematics(&mut inh_bones, armature.ik_root_ids.clone());
+pub fn construct(armature: &mut Armature) {
+    // initialize cached_bones
+    if armature.cached_bones.len() == 0 {
+        armature.cached_bones = armature.bones.clone();
     }
 
-    inheritance(&mut final_bones, ik_rots);
-    construct_verts(&mut final_bones);
-    final_bones
+    // process IK if this file isn't baked
+    let mut ik_rots = HashMap::new();
+    if !armature.baked_ik {
+        reset_inheritance(&mut armature.cached_bones, &armature.bones);
+        inheritance(&mut armature.cached_bones, HashMap::new());
+        ik_rots = inverse_kinematics(&mut armature.cached_bones, armature.ik_root_ids.clone());
+    }
+
+    reset_inheritance(&mut armature.cached_bones, &armature.bones);
+    inheritance(&mut armature.cached_bones, ik_rots);
+
+    // mesh deformation
+    construct_verts(&mut armature.cached_bones);
 }
 
 pub fn construct_verts(bones: &mut Vec<Bone>) {
     for b in 0..bones.len() {
-        let bone = bones[b].clone();
-
         // move vertex to main bone.
         // this will be overridden if vertex has a bind.
-        for vert in &mut bones[b].vertices {
-            vert.pos = inherit_vert(vert.pos, &bone);
+        for v in 0..bones[b].vertices.len() {
+            bones[b].vertices[v].pos = inherit_vert(bones[b].vertices[v].pos, &bones[b]);
         }
 
         for bi in 0..bones[b].binds.len() {
@@ -417,16 +434,15 @@ pub fn construct_verts(bones: &mut Vec<Bone>) {
                 .find(|bone| bone.id == b_id as u32)
                 .unwrap()
                 .clone();
-            let bind = bones[b].binds[bi].clone();
-            for v in 0..bind.verts.len() {
-                let vert_id = bind.verts[v].id as usize;
+            for v in 0..bones[b].binds[bi].verts.len() {
+                let vert_id = bones[b].binds[bi].verts[v].id as usize;
 
-                if !bind.is_path {
+                if !bones[b].binds[bi].is_path {
                     // weights
-                    let vert = &mut bones[b].vertices[vert_id];
-                    let weight = bind.verts[v].weight;
-                    let end_pos = inherit_vert(vert.init_pos, &bind_bone) - vert.pos;
-                    vert.pos += end_pos * weight;
+                    let weight = bones[b].binds[bi].verts[v].weight;
+                    let end_pos = inherit_vert(bones[b].vertices[vert_id].init_pos, &bind_bone)
+                        - bones[b].vertices[vert_id].pos;
+                    bones[b].vertices[vert_id].pos += end_pos * weight;
                     continue;
                 }
 
@@ -454,10 +470,14 @@ pub fn construct_verts(bones: &mut Vec<Bone>) {
                 let normal_angle = average.y.atan2(average.x);
 
                 // move vertex to bind bone, then just adjust it to 'bounce' off the line's surface
-                let vert = &mut bones[b].vertices[vert_id];
-                vert.pos = vert.init_pos + bind_bone.pos;
-                let rotated = rotate(&(vert.pos - bind_bone.pos), normal_angle);
-                vert.pos = bind_bone.pos + (rotated * bind.verts[v].weight);
+                bones[b].vertices[vert_id].pos =
+                    bones[b].vertices[vert_id].init_pos + bind_bone.pos;
+                let rotated = rotate(
+                    &(bones[b].vertices[vert_id].pos - bind_bone.pos),
+                    normal_angle,
+                );
+                bones[b].vertices[vert_id].pos =
+                    bind_bone.pos + (rotated * bones[b].binds[bi].verts[v].weight);
             }
         }
     }
