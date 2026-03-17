@@ -444,6 +444,7 @@ pub fn construct(armature: &mut Armature) {
     construct_verts(&mut armature.cached_bones);
 }
 
+#[allow(unused)]
 fn simulate_physics(armature_bones: &mut Vec<Bone>, constructed_bones: &mut Vec<Bone>) {
     // interpolate global fields, based on constructed bones
     for b in 0..armature_bones.len() {
