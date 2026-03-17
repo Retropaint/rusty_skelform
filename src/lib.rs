@@ -134,6 +134,13 @@ pub struct Bone {
     pub indices: Vec<u32>,
     pub binds: Vec<BoneBind>,
 
+    pub phys_global_pos: Vec2,
+    pub phys_pos_elasticity: f32,
+    pub phys_global_rot: f32,
+    pub phys_rot_resistance: f32,
+    pub phys_global_scale: Vec2,
+    pub phys_scale_elasticity: f32,
+
     pub rot: f32,
     pub scale: Vec2,
     pub pos: Vec2,
@@ -365,7 +372,7 @@ pub fn is_animated(bone_id: u32, el: &str, anims: &Vec<&Animation>) -> bool {
 
 /// Apply child-parent inheritance.
 /// Must be run twice, before and after `inverse_kinematics()`.
-pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<u32, f32>) {
+pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<u32, f32>, armature_bones: &Vec<Bone>) {
     for b in 0..bones.len() {
         if bones[b].parent_id != -1 {
             let parent = &bones[bones[b].parent_id as usize];
@@ -383,6 +390,19 @@ pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<u32, f32>) {
         if let Some(ik_rot) = ik_rots.get(&(b as u32)) {
             bones[b].rot = *ik_rot;
         }
+
+        // apply physics, if armature_bones is provided
+        if armature_bones.len() > 0 {
+            if bones[b].phys_rot_resistance > 1. {
+                bones[b].rot = armature_bones[b].phys_global_rot;
+            }
+            if bones[b].phys_pos_elasticity > 0. {
+                bones[b].pos = armature_bones[b].phys_global_pos;
+            }
+            if bones[b].phys_scale_elasticity > 0. {
+                bones[b].scale = armature_bones[b].phys_global_scale;
+            }
+        }
     }
 }
 
@@ -399,21 +419,73 @@ pub fn construct(armature: &mut Armature) {
     // initialize cached_bones
     if armature.cached_bones.len() == 0 {
         armature.cached_bones = armature.bones.clone();
+    } else {
+        armature
+            .cached_bones
+            .sort_by(|a, b| a.id.partial_cmp(&b.id).unwrap());
     }
 
     // process IK if this file isn't baked
     let mut ik_rots = HashMap::new();
     if !armature.baked_ik {
         reset_inheritance(&mut armature.cached_bones, &armature.bones);
-        inheritance(&mut armature.cached_bones, HashMap::new());
+        inheritance(&mut armature.cached_bones, HashMap::new(), &vec![]);
         ik_rots = inverse_kinematics(&mut armature.cached_bones, armature.ik_root_ids.clone());
     }
-
     reset_inheritance(&mut armature.cached_bones, &armature.bones);
-    inheritance(&mut armature.cached_bones, ik_rots);
+    inheritance(&mut armature.cached_bones, ik_rots.clone(), &vec![]);
+
+    // simulate physics
+    //simulate_physics(&mut armature.bones, &mut armature.cached_bones);
+    //reset_inheritance(&mut armature.cached_bones, &armature.bones);
+    //inheritance(&mut armature.cached_bones, ik_rots, &armature.bones);
 
     // mesh deformation
     construct_verts(&mut armature.cached_bones);
+}
+
+fn simulate_physics(armature_bones: &mut Vec<Bone>, constructed_bones: &mut Vec<Bone>) {
+    // interpolate global fields, based on constructed bones
+    for b in 0..armature_bones.len() {
+        let s = Vec2::new(0.3, 0.3);
+        let e = Vec2::new(0.6, 0.6);
+        let arm_bone = &mut armature_bones[b];
+        let const_bone = &constructed_bones[b];
+        let prev_pos = arm_bone.phys_global_pos;
+
+        // interpolate position
+        if arm_bone.phys_pos_elasticity > 0. || arm_bone.phys_rot_resistance > 0. {
+            let phys_pos = &mut arm_bone.phys_global_pos;
+            let elasticity = arm_bone.phys_pos_elasticity;
+            phys_pos.x = interpolate(2, elasticity as u32, phys_pos.x, const_bone.pos.x, s, e);
+            phys_pos.y = interpolate(2, elasticity as u32, phys_pos.y, const_bone.pos.y, s, e);
+        }
+
+        // interpolate rotation
+        // 'interpolation' here is conceptual - to avoid roundabouts, shortest_delta is always used
+        if arm_bone.phys_rot_resistance > 0. {
+            // swing rotation based on momentum
+            let vel = normalize(arm_bone.phys_global_pos - prev_pos);
+            let angle = (-vel.y).atan2(-vel.x);
+            let rot = shortest_angle_delta(arm_bone.phys_global_rot, angle);
+            if arm_bone.phys_rot_resistance > 50. {
+                let strength = magnitude(arm_bone.phys_global_pos - prev_pos);
+                arm_bone.phys_global_rot += rot * strength / arm_bone.phys_rot_resistance;
+            }
+
+            // slowly reset rotation back to rest
+            let rot = shortest_angle_delta(arm_bone.phys_global_rot, const_bone.rot);
+            arm_bone.phys_global_rot += rot / 10.;
+        }
+
+        // interpolate scale
+        if arm_bone.phys_scale_elasticity > 0. {
+            let phys_scale = &mut arm_bone.phys_global_scale;
+            let elas = arm_bone.phys_scale_elasticity;
+            phys_scale.x = interpolate(2, elas as u32, phys_scale.x, const_bone.scale.x, s, e);
+            phys_scale.y = interpolate(2, elas as u32, phys_scale.y, const_bone.scale.y, s, e);
+        }
+    }
 }
 
 pub fn construct_verts(bones: &mut Vec<Bone>) {
@@ -421,6 +493,7 @@ pub fn construct_verts(bones: &mut Vec<Bone>) {
         // move vertex to main bone.
         // this will be overridden if vertex has a bind.
         for v in 0..bones[b].vertices.len() {
+            bones[b].vertices[v].pos = bones[b].vertices[v].init_pos;
             bones[b].vertices[v].pos = inherit_vert(bones[b].vertices[v].pos, &bones[b]);
         }
 
@@ -770,4 +843,17 @@ pub fn check_flip(bone: &mut Bone, scale: Vec2) {
     if either && !both {
         bone.rot = -bone.rot;
     }
+}
+
+pub fn shortest_angle_delta(from: f32, to: f32) -> f32 {
+    let pi = 3.141592653589793;
+    let tau = pi * 2.0;
+    let mut delta = to - from;
+    while delta > pi {
+        delta -= tau;
+    }
+    while delta < -pi {
+        delta += tau;
+    }
+    delta
 }
