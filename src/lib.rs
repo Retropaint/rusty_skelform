@@ -435,10 +435,10 @@ pub fn construct(armature: &mut Armature) {
     reset_inheritance(&mut armature.cached_bones, &armature.bones);
     inheritance(&mut armature.cached_bones, ik_rots.clone(), &vec![]);
 
-    // simulate physics
-    //simulate_physics(&mut armature.bones, &mut armature.cached_bones);
-    //reset_inheritance(&mut armature.cached_bones, &armature.bones);
-    //inheritance(&mut armature.cached_bones, ik_rots, &armature.bones);
+    // // simulate physics
+    // simulate_physics(&mut armature.bones, &mut armature.cached_bones);
+    // reset_inheritance(&mut armature.cached_bones, &armature.bones);
+    // inheritance(&mut armature.cached_bones, ik_rots, &armature.bones);
 
     // mesh deformation
     construct_verts(&mut armature.cached_bones);
