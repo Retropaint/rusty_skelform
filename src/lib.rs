@@ -427,7 +427,7 @@ pub fn construct(armature: &mut Armature) {
 
     // process IK if this file isn't baked
     let mut ik_rots = HashMap::new();
-    if !armature.baked_ik {
+    if !armature.baked_ik && armature.ik_root_ids.len() > 0 {
         reset_inheritance(&mut armature.cached_bones, &armature.bones);
         inheritance(&mut armature.cached_bones, HashMap::new(), &vec![]);
         ik_rots = inverse_kinematics(&mut armature.cached_bones, armature.ik_root_ids.clone());
