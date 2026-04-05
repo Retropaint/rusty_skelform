@@ -1,14 +1,14 @@
 use std::{collections::HashMap, time::Instant};
 
 #[repr(C)]
-#[derive(serde::Deserialize, Clone, Debug)]
+#[derive(serde::Deserialize, Clone, Debug, PartialEq)]
 pub struct Vertex {
     pub pos: Vec2,
     pub uv: Vec2,
     pub init_pos: Vec2,
 }
 
-#[derive(serde::Deserialize, Clone, Debug, Default, Copy)]
+#[derive(serde::Deserialize, Clone, Debug, Default, Copy, PartialEq)]
 pub struct Tint {
     pub r: f32,
     pub g: f32,
@@ -114,7 +114,7 @@ pub struct Animation {
     pub fps: u32,
     pub keyframes: Vec<Keyframe>,
 }
-#[derive(serde::Deserialize, Clone, Debug, Default)]
+#[derive(serde::Deserialize, Clone, Debug, Default, PartialEq)]
 #[serde(default)]
 pub struct Bone {
     pub id: u32,
@@ -135,11 +135,19 @@ pub struct Bone {
     pub binds: Vec<BoneBind>,
 
     pub phys_global_pos: Vec2,
-    pub phys_pos_elasticity: f32,
+    pub phys_pos_damping: f32,
+
     pub phys_global_rot: f32,
+    pub phys_global_orbit: f32,
+    pub phys_global_orbit_diff: f32,
+    pub phys_global_orbit_vel: f32,
+    pub phys_rot_damping: f32,
+    pub phys_rot_bounce: f32,
+    pub phys_rot_vel: f32,
     pub phys_rot_resistance: f32,
+
     pub phys_global_scale: Vec2,
-    pub phys_scale_elasticity: f32,
+    pub phys_scale_damping: f32,
 
     pub rot: f32,
     pub scale: Vec2,
@@ -377,13 +385,20 @@ pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<u32, f32>, armature_b
         if bones[b].parent_id != -1 {
             let parent = &bones[bones[b].parent_id as usize];
             let parent_pos = parent.pos;
-            let parent_rot = parent.rot;
             let parent_scale = parent.scale;
 
             bones[b].rot += parent.rot;
             bones[b].scale *= parent_scale;
             bones[b].pos *= parent_scale;
-            bones[b].pos = rotate(&bones[b].pos, parent_rot);
+
+            // orbit the parent
+            let mut orbit_rot = bones[bones[b].parent_id as usize].rot;
+            // apply orbital difference, if rotation resistance physics is active
+            if armature_bones.len() > 0 && armature_bones[b].phys_rot_resistance > 0. {
+                orbit_rot -= armature_bones[b].phys_global_orbit_diff;
+            }
+            bones[b].pos = rotate(&bones[b].pos, orbit_rot);
+
             bones[b].pos += parent_pos;
         }
 
@@ -393,13 +408,13 @@ pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<u32, f32>, armature_b
 
         // apply physics, if armature_bones is provided
         if armature_bones.len() > 0 {
-            if bones[b].phys_rot_resistance > 1. {
+            if bones[b].phys_rot_damping > 0. {
                 bones[b].rot = armature_bones[b].phys_global_rot;
             }
-            if bones[b].phys_pos_elasticity > 0. {
+            if bones[b].phys_pos_damping > 0. {
                 bones[b].pos = armature_bones[b].phys_global_pos;
             }
-            if bones[b].phys_scale_elasticity > 0. {
+            if bones[b].phys_scale_damping > 0. {
                 bones[b].scale = armature_bones[b].phys_global_scale;
             }
         }
@@ -435,10 +450,10 @@ pub fn construct(armature: &mut Armature) {
     reset_inheritance(&mut armature.cached_bones, &armature.bones);
     inheritance(&mut armature.cached_bones, ik_rots.clone(), &vec![]);
 
-    // // simulate physics
-    // simulate_physics(&mut armature.bones, &mut armature.cached_bones);
-    // reset_inheritance(&mut armature.cached_bones, &armature.bones);
-    // inheritance(&mut armature.cached_bones, ik_rots, &armature.bones);
+    // simulate physics
+    simulate_physics(&mut armature.bones, &mut armature.cached_bones);
+    reset_inheritance(&mut armature.cached_bones, &armature.bones);
+    inheritance(&mut armature.cached_bones, ik_rots, &armature.bones);
 
     // mesh deformation
     construct_verts(&mut armature.cached_bones);
@@ -446,7 +461,6 @@ pub fn construct(armature: &mut Armature) {
 
 #[allow(unused)]
 fn simulate_physics(armature_bones: &mut Vec<Bone>, constructed_bones: &mut Vec<Bone>) {
-    // interpolate global fields, based on constructed bones
     for b in 0..armature_bones.len() {
         let s = Vec2::new(0.3, 0.3);
         let e = Vec2::new(0.6, 0.6);
@@ -455,36 +469,51 @@ fn simulate_physics(armature_bones: &mut Vec<Bone>, constructed_bones: &mut Vec<
         let prev_pos = arm_bone.phys_global_pos;
 
         // interpolate position
-        if arm_bone.phys_pos_elasticity > 0. || arm_bone.phys_rot_resistance > 0. {
+        if arm_bone.phys_pos_damping > 0. || arm_bone.phys_rot_resistance > 0. {
             let phys_pos = &mut arm_bone.phys_global_pos;
-            let elasticity = arm_bone.phys_pos_elasticity;
+            let elasticity = arm_bone.phys_pos_damping;
             phys_pos.x = interpolate(2, elasticity as u32, phys_pos.x, const_bone.pos.x, s, e);
             phys_pos.y = interpolate(2, elasticity as u32, phys_pos.y, const_bone.pos.y, s, e);
         }
 
-        // interpolate rotation
-        // 'interpolation' here is conceptual - to avoid roundabouts, shortest_delta is always used
-        if arm_bone.phys_rot_resistance > 0. {
-            // swing rotation based on momentum
-            let vel = normalize(arm_bone.phys_global_pos - prev_pos);
-            let angle = (-vel.y).atan2(-vel.x);
-            let rot = shortest_angle_delta(arm_bone.phys_global_rot, angle);
-            if arm_bone.phys_rot_resistance > 50. {
-                let strength = magnitude(arm_bone.phys_global_pos - prev_pos);
-                arm_bone.phys_global_rot += rot * strength / arm_bone.phys_rot_resistance;
-            }
-
-            // slowly reset rotation back to rest
-            let rot = shortest_angle_delta(arm_bone.phys_global_rot, const_bone.rot);
-            arm_bone.phys_global_rot += rot / 10.;
-        }
-
         // interpolate scale
-        if arm_bone.phys_scale_elasticity > 0. {
+        if arm_bone.phys_scale_damping > 0. {
             let phys_scale = &mut arm_bone.phys_global_scale;
-            let elas = arm_bone.phys_scale_elasticity;
+            let elas = arm_bone.phys_scale_damping;
             phys_scale.x = interpolate(2, elas as u32, phys_scale.x, const_bone.scale.x, s, e);
             phys_scale.y = interpolate(2, elas as u32, phys_scale.y, const_bone.scale.y, s, e);
+        }
+
+        // interpolate rotation
+        if arm_bone.phys_rot_damping > 0. {
+            let rot = shortest_angle_delta(arm_bone.phys_global_rot, const_bone.rot);
+            arm_bone.phys_global_rot += rot / arm_bone.phys_rot_damping;
+        }
+
+        // interpolate parent orbit (rot res, bounce, etc)
+        let bones = &constructed_bones;
+        let parent = bones.iter().find(|b| b.id == const_bone.parent_id as u32);
+        if arm_bone.phys_rot_resistance > 0. && parent != None {
+            // interpolate to the angle difference between bone and parent
+            let diff = normalize(const_bone.pos - parent.unwrap().pos);
+            let diff_angle = diff.y.atan2(diff.x);
+            let mut rest_rot = shortest_angle_delta(arm_bone.phys_global_orbit, diff_angle);
+            // apply bounce
+            if arm_bone.phys_rot_bounce > 0. && arm_bone.phys_rot_bounce <= 1. {
+                rest_rot += arm_bone.phys_global_orbit_vel / (2. - arm_bone.phys_rot_bounce);
+                arm_bone.phys_global_orbit_vel = rest_rot;
+            }
+            arm_bone.phys_global_orbit += rest_rot / 10.;
+
+            // swing orbit based on position momentum
+            let vel = normalize(arm_bone.phys_global_pos - prev_pos);
+            let angle = (-vel.y).atan2(-vel.x);
+            let vel_rot = shortest_angle_delta(arm_bone.phys_global_orbit, angle);
+            let strength = magnitude(arm_bone.phys_global_pos - prev_pos);
+            arm_bone.phys_global_orbit += vel_rot * strength / arm_bone.phys_rot_resistance;
+
+            // apply difference in final angle and orbit
+            arm_bone.phys_global_orbit_diff = diff_angle - arm_bone.phys_global_orbit;
         }
     }
 }
