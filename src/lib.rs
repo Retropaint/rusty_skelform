@@ -258,7 +258,7 @@ pub struct Armature {
     pub ik_root_ids: Vec<u32>,
     pub baked_ik: bool,
     pub bones: Vec<Bone>,
-    pub cached_bones: Vec<Bone>,
+    pub constructed_bones: Vec<Bone>,
     pub animations: Vec<Animation>,
     pub textures: Vec<Texture>,
     pub styles: Vec<Style>,
@@ -425,41 +425,44 @@ pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<u32, f32>, armature_b
 }
 
 /// Always run this before `inheritance()`.`
-pub fn reset_inheritance(cached_bones: &mut Vec<Bone>, bones: &Vec<Bone>) {
+pub fn reset_inheritance(constructed_bones: &mut Vec<Bone>, bones: &Vec<Bone>) {
     for b in 0..bones.len() {
-        cached_bones[b].pos = bones[b].pos;
-        cached_bones[b].rot = bones[b].rot;
-        cached_bones[b].scale = bones[b].scale;
+        constructed_bones[b].pos = bones[b].pos;
+        constructed_bones[b].rot = bones[b].rot;
+        constructed_bones[b].scale = bones[b].scale;
     }
 }
 
 pub fn construct(armature: &mut Armature) {
-    // initialize cached_bones
-    if armature.cached_bones.len() == 0 {
-        armature.cached_bones = armature.bones.clone();
+    // initialize constructed_bones
+    if armature.constructed_bones.len() == 0 {
+        armature.constructed_bones = armature.bones.clone();
     } else {
         armature
-            .cached_bones
+            .constructed_bones
             .sort_by(|a, b| a.id.partial_cmp(&b.id).unwrap());
     }
 
     // process IK if this file isn't baked
     let mut ik_rots = HashMap::new();
     if !armature.baked_ik && armature.ik_root_ids.len() > 0 {
-        reset_inheritance(&mut armature.cached_bones, &armature.bones);
-        inheritance(&mut armature.cached_bones, HashMap::new(), &vec![]);
-        ik_rots = inverse_kinematics(&mut armature.cached_bones, armature.ik_root_ids.clone());
+        reset_inheritance(&mut armature.constructed_bones, &armature.bones);
+        inheritance(&mut armature.constructed_bones, HashMap::new(), &vec![]);
+        ik_rots = inverse_kinematics(
+            &mut armature.constructed_bones,
+            armature.ik_root_ids.clone(),
+        );
     }
-    reset_inheritance(&mut armature.cached_bones, &armature.bones);
-    inheritance(&mut armature.cached_bones, ik_rots.clone(), &vec![]);
+    reset_inheritance(&mut armature.constructed_bones, &armature.bones);
+    inheritance(&mut armature.constructed_bones, ik_rots.clone(), &vec![]);
 
     // simulate physics
-    simulate_physics(&mut armature.bones, &mut armature.cached_bones);
-    reset_inheritance(&mut armature.cached_bones, &armature.bones);
-    inheritance(&mut armature.cached_bones, ik_rots, &armature.bones);
+    simulate_physics(&mut armature.bones, &mut armature.constructed_bones);
+    reset_inheritance(&mut armature.constructed_bones, &armature.bones);
+    inheritance(&mut armature.constructed_bones, ik_rots, &armature.bones);
 
     // mesh deformation
-    construct_verts(&mut armature.cached_bones);
+    construct_verts(&mut armature.constructed_bones);
 }
 
 #[allow(unused)]
