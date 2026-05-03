@@ -465,7 +465,6 @@ pub fn construct(armature: &mut Armature) {
     construct_verts(&mut armature.constructed_bones);
 }
 
-#[allow(unused)]
 fn simulate_physics(armature_bones: &mut Vec<Bone>, constructed_bones: &mut Vec<Bone>) {
     for b in 0..armature_bones.len() {
         let s = Vec2::new(0.3, 0.3);
@@ -493,13 +492,13 @@ fn simulate_physics(armature_bones: &mut Vec<Bone>, constructed_bones: &mut Vec<
         // interpolate scale
         if arm_bone.phys_scale_damping > 0. {
             let phys_scale = &mut arm_bone.phys_global_scale;
-            let mut damping = Vec2::new(arm_bone.phys_pos_damping, arm_bone.phys_pos_damping);
+            let mut damping = Vec2::new(arm_bone.phys_scale_damping, arm_bone.phys_scale_damping);
 
             // ratio
-            if arm_bone.phys_pos_ratio < 0. {
-                damping.y *= 1. - arm_bone.phys_pos_ratio.abs();
+            if arm_bone.phys_scale_ratio < 0. {
+                damping.y *= 1. - arm_bone.phys_scale_ratio.abs();
             } else if arm_bone.phys_pos_ratio > 0. {
-                damping.x *= 1. - arm_bone.phys_pos_ratio;
+                damping.x *= 1. - arm_bone.phys_scale_ratio;
             }
 
             phys_scale.x = interpolate(2, damping.x as u32, phys_scale.x, const_bone.scale.x, s, e);
