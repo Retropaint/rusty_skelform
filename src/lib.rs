@@ -282,9 +282,23 @@ pub fn animate(
     frames: &Vec<u32>,
     blend_frames: &Vec<u32>,
 ) {
+    // keeps track of animated elements. Bone elements not included will be reset
+    let mut reset_map: HashMap<u32, Vec<String>> = HashMap::new();
+
     for a in 0..anims.len() {
         for k in 0..anims[a].keyframes.len() {
             let kf = &anims[a].keyframes[k];
+
+            // add this keyframe bone and element, to be used later
+            let mut new = vec![];
+            if let Some(reset) = reset_map.get(&kf.bone_id) {
+                new = reset.clone();
+            }
+            if !new.contains(&kf.element) {
+                new.push(kf.element.clone());
+                reset_map.insert(kf.bone_id, new);
+            }
+
             if kf.frame > frames[a] {
                 break;
             }
@@ -322,39 +336,28 @@ pub fn animate(
         }
     }
 
-    let mut reset_map: HashMap<u32, Vec<&str>> = HashMap::new();
-    for anim in anims {
-        for kf in &anim.keyframes {
-            let mut new = vec![];
-            if let Some(reset) = reset_map.get(&kf.bone_id) {
-                new = reset.clone();
-            }
-            new.push(&kf.element);
-            reset_map.insert(kf.bone_id, new);
-        }
-    }
-
+    // reset non-animated bone elements
     for bone in bones {
-        let reset = reset_map.get(&bone.id);
-        if reset == None {
-            continue;
+        let mut reset: &Vec<String> = &vec![];
+        if let Some(this_reset) = reset_map.get(&bone.id) {
+            reset = &this_reset;
         }
-        let reset = reset.unwrap();
+
         let z = Vec2::new(0., 0.);
         let sf = &blend_frames;
-        if !reset.contains(&"PositionX") {
+        if !reset.contains(&"PositionX".to_string()) {
             bone.pos.x = interpolate(frames[0], sf[0], bone.pos.x, bone.init_pos.x, z, z);
         }
-        if !reset.contains(&"PositionY") {
+        if !reset.contains(&"PositionY".to_string()) {
             bone.pos.y = interpolate(frames[0], sf[0], bone.pos.y, bone.init_pos.y, z, z);
         }
-        if !reset.contains(&"Rotation") {
+        if !reset.contains(&"Rotation".to_string()) {
             bone.rot = interpolate(frames[0], sf[0], bone.rot, bone.init_rot, z, z);
         }
-        if !reset.contains(&"ScaleX") {
+        if !reset.contains(&"ScaleX".to_string()) {
             bone.scale.x = interpolate(frames[0], sf[0], bone.scale.x, bone.init_scale.x, z, z);
         }
-        if !reset.contains(&"ScaleY") {
+        if !reset.contains(&"ScaleY".to_string()) {
             bone.scale.y = interpolate(frames[0], sf[0], bone.scale.y, bone.init_scale.y, z, z);
         }
     }
@@ -619,25 +622,6 @@ fn rotate(point: &Vec2, rot: f32) -> Vec2 {
         x: point.x * rot.cos() - point.y * rot.sin(),
         y: point.x * rot.sin() + point.y * rot.cos(),
     }
-}
-
-fn get_prev_frame(keyframes: &Vec<Keyframe>, frame: u32, element: &str, id: u32) -> usize {
-    let mut prev = usize::MAX;
-    for (i, kf) in keyframes.iter().enumerate() {
-        if kf.frame <= frame && kf.element == element && kf.bone_id == id {
-            prev = i;
-        }
-    }
-    prev
-}
-
-fn get_next_frame(keyframes: &Vec<Keyframe>, frame: u32, element: &str, id: u32) -> usize {
-    for (i, kf) in keyframes.iter().enumerate() {
-        if kf.frame > frame && kf.element == element && kf.bone_id == id {
-            return i;
-        }
-    }
-    usize::MAX
 }
 
 /// Interpolate an f32 value from the specified keyframe data.
