@@ -22,7 +22,7 @@ dependencies = [
 
 [[package]]
 name = "rusty_skelform"
-version = "0.4.4"
+version = "0.5.0"
 dependencies = [
  "serde",
 ]

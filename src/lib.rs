@@ -202,6 +202,7 @@ pub struct Keyframe {
     pub bone_id: u32,
     pub element: String,
     pub value: f32,
+    pub next_kf: i32,
     pub value_str: String,
     pub start_handle: Vec2,
     pub end_handle: Vec2,
@@ -282,82 +283,81 @@ pub fn animate(
     blend_frames: &Vec<u32>,
 ) {
     for a in 0..anims.len() {
-        for b in 0..bones.len() {
-            let keyframes = &anims[a].keyframes;
-            let b_id = bones[b].id;
-            interpolate_bone(&mut bones[b], keyframes, b_id, frames[a], blend_frames[a]);
+        for k in 0..anims[a].keyframes.len() {
+            let kf = &anims[a].keyframes[k];
+            if kf.frame > frames[a] {
+                break;
+            }
+
+            let mut nkf = kf.next_kf;
+            if nkf == -1 {
+                nkf = k as i32;
+            }
+
+            let next_kf = &anims[a].keyframes[nkf as usize];
+
+            // skip keyframe if it's not the last, and would not be animated
+            let is_last = nkf == k as i32;
+            let is_before_frame = next_kf.frame < frames[a];
+            if is_before_frame && !is_last {
+                continue;
+            }
+
+            let bone = &mut bones[kf.bone_id as usize];
+            if kf.element == "PositionX" {
+                interpolate_keyframes(&mut bone.pos.x, kf, next_kf, frames[a], blend_frames[a]);
+            }
+            if kf.element == "PositionY" {
+                interpolate_keyframes(&mut bone.pos.y, kf, next_kf, frames[a], blend_frames[a]);
+            }
+            if kf.element == "Rotation" {
+                interpolate_keyframes(&mut bone.rot, kf, next_kf, frames[a], blend_frames[a]);
+            }
+            if kf.element == "ScaleX" {
+                interpolate_keyframes(&mut bone.scale.x, kf, next_kf, frames[a], blend_frames[a]);
+            }
+            if kf.element == "ScaleY" {
+                interpolate_keyframes(&mut bone.scale.y, kf, next_kf, frames[a], blend_frames[a]);
+            }
+        }
+    }
+
+    let mut reset_map: HashMap<u32, Vec<&str>> = HashMap::new();
+    for anim in anims {
+        for kf in &anim.keyframes {
+            let mut new = vec![];
+            if let Some(reset) = reset_map.get(&kf.bone_id) {
+                new = reset.clone();
+            }
+            new.push(&kf.element);
+            reset_map.insert(kf.bone_id, new);
         }
     }
 
     for bone in bones {
-        reset_bone(bone, frames[0], blend_frames[0], anims);
+        let reset = reset_map.get(&bone.id);
+        if reset == None {
+            continue;
+        }
+        let reset = reset.unwrap();
+        let z = Vec2::new(0., 0.);
+        let sf = &blend_frames;
+        if !reset.contains(&"PositionX") {
+            bone.pos.x = interpolate(frames[0], sf[0], bone.pos.x, bone.init_pos.x, z, z);
+        }
+        if !reset.contains(&"PositionY") {
+            bone.pos.y = interpolate(frames[0], sf[0], bone.pos.y, bone.init_pos.y, z, z);
+        }
+        if !reset.contains(&"Rotation") {
+            bone.rot = interpolate(frames[0], sf[0], bone.rot, bone.init_rot, z, z);
+        }
+        if !reset.contains(&"ScaleX") {
+            bone.scale.x = interpolate(frames[0], sf[0], bone.scale.x, bone.init_scale.x, z, z);
+        }
+        if !reset.contains(&"ScaleY") {
+            bone.scale.y = interpolate(frames[0], sf[0], bone.scale.y, bone.init_scale.y, z, z);
+        }
     }
-}
-
-pub fn interpolate_bone(
-    bone: &mut Bone,
-    keyframes: &Vec<Keyframe>,
-    bone_id: u32,
-    frame: u32,
-    blend_frame: u32,
-) {
-    let bf = blend_frame;
-    interpolate_keyframes("PositionX", &mut bone.pos.x, keyframes, bone_id, frame, bf);
-    interpolate_keyframes("PositionY", &mut bone.pos.y, keyframes, bone_id, frame, bf);
-    interpolate_keyframes("Rotation", &mut bone.rot, keyframes, bone_id, frame, bf);
-    interpolate_keyframes("ScaleX", &mut bone.scale.x, keyframes, bone_id, frame, bf);
-    interpolate_keyframes("ScaleY", &mut bone.scale.y, keyframes, bone_id, frame, bf);
-    interpolate_keyframes("TintR", &mut bone.tint.r, keyframes, bone_id, frame, bf);
-    interpolate_keyframes("TintG", &mut bone.tint.g, keyframes, bone_id, frame, bf);
-    interpolate_keyframes("TintB", &mut bone.tint.b, keyframes, bone_id, frame, bf);
-    interpolate_keyframes("TintA", &mut bone.tint.a, keyframes, bone_id, frame, bf);
-
-    macro_rules! prev_frame {
-        ($element:expr, $field:expr, $kf_value:ident, $value_type:tt) => {
-            let prev_frame = get_prev_frame(keyframes, frame, $element, bone.id);
-            if prev_frame != usize::MAX {
-                $field = keyframes[prev_frame].$kf_value.clone() as $value_type;
-            }
-        };
-    }
-    prev_frame!("Texture", bone.tex, value_str, String);
-    prev_frame!("Zindex", bone.zindex, value, i32);
-    prev_frame!("IkMode", bone.ik_mode, value_str, String);
-    prev_frame!("IkConstraint", bone.ik_constraint, value_str, String);
-
-    let prev_frame = get_prev_frame(keyframes, frame, "Hidden", bone.id);
-    if prev_frame != usize::MAX {
-        bone.hidden = keyframes[prev_frame].value == 1.;
-    }
-}
-
-pub fn reset_bone(bone: &mut Bone, frame: u32, blend_frame: u32, anims: &Vec<&Animation>) {
-    let z = Vec2::new(0., 0.);
-    macro_rules! interp {
-        ($element:expr, $field:expr, $init_field:expr) => {
-            if !is_animated(bone.id, $element, anims) {
-                $field = interpolate(frame, blend_frame, $field, $init_field, z, z);
-            }
-        };
-    }
-    interp!("PositionX", bone.pos.x, bone.init_pos.x);
-    interp!("PositionY", bone.pos.y, bone.init_pos.y);
-    interp!("Rotation", bone.rot, bone.init_rot);
-    interp!("ScaleX", bone.scale.x, bone.init_scale.x);
-    interp!("ScaleY", bone.scale.y, bone.init_scale.y);
-
-    macro_rules! hard_interp {
-        ($element:expr, $field:expr, $init_field:expr) => {
-            if !is_animated(bone.id, $element, anims) {
-                $field = $init_field.clone();
-            }
-        };
-    }
-    hard_interp!("Texture", bone.tex, bone.init_tex);
-    hard_interp!("Zindex", bone.zindex, bone.init_zindex);
-    hard_interp!("Hidden", bone.hidden, bone.init_hidden);
-    hard_interp!("IkMode", bone.ik_mode, bone.init_ik_mode);
-    hard_interp!("IkConstraint", bone.ik_constraint, bone.init_ik_constraint);
 }
 
 pub fn get_bone_texture(bone_tex: String, styles: &Vec<&Style>) -> Option<Texture> {
@@ -367,17 +367,6 @@ pub fn get_bone_texture(bone_tex: String, styles: &Vec<&Style>) -> Option<Textur
         }
     }
     return None;
-}
-
-pub fn is_animated(bone_id: u32, el: &str, anims: &Vec<&Animation>) -> bool {
-    for anim in anims {
-        for kf in &anim.keyframes {
-            if kf.bone_id == bone_id && kf.element == el {
-                return true;
-            }
-        }
-    }
-    false
 }
 
 /// Apply child-parent inheritance.
@@ -518,13 +507,13 @@ fn simulate_physics(armature_bones: &mut Vec<Bone>, constructed_bones: &mut Vec<
             // interpolate to the angle difference between bone and parent
             let diff = normalize(const_bone.pos - parent.unwrap().pos);
             let diff_angle = diff.y.atan2(diff.x);
-            let mut rest_rot = shortest_angle_delta(arm_bone.phys_global_orbit, diff_angle);
+            let mut orbit_buffer = shortest_angle_delta(arm_bone.phys_global_orbit, diff_angle);
             // apply bounce
             if arm_bone.phys_rot_bounce > 0. && arm_bone.phys_rot_bounce <= 1. {
-                rest_rot += arm_bone.phys_global_orbit_vel / (2. - arm_bone.phys_rot_bounce);
-                arm_bone.phys_global_orbit_vel = rest_rot;
+                orbit_buffer += arm_bone.phys_global_orbit_vel / (2. - arm_bone.phys_rot_bounce);
+                arm_bone.phys_global_orbit_vel = orbit_buffer;
             }
-            arm_bone.phys_global_orbit += rest_rot / 10.;
+            arm_bone.phys_global_orbit += orbit_buffer / 10.;
 
             // swing orbit based on position momentum
             let vel = normalize(arm_bone.phys_global_pos - prev_pos);
@@ -533,7 +522,6 @@ fn simulate_physics(armature_bones: &mut Vec<Bone>, constructed_bones: &mut Vec<
             let strength = magnitude(arm_bone.phys_global_pos - prev_pos) / 1000.;
             arm_bone.phys_global_orbit += vel_rot * strength * arm_bone.phys_sway;
 
-            // apply difference in final angle and orbit
             arm_bone.phys_global_orbit_diff = diff_angle - arm_bone.phys_global_orbit;
         }
     }
@@ -654,42 +642,26 @@ fn get_next_frame(keyframes: &Vec<Keyframe>, frame: u32, element: &str, id: u32)
 
 /// Interpolate an f32 value from the specified keyframe data.
 pub fn interpolate_keyframes(
-    element: &str,
     field: &mut f32,
-    keyframes: &Vec<Keyframe>,
-    id: u32,
+    prev_kf: &Keyframe,
+    next_kf: &Keyframe,
     frame: u32,
-    blend_frames: u32,
+    smooth_frames: u32,
 ) {
-    let mut prev = get_prev_frame(keyframes, frame, element, id);
-    let mut next = get_next_frame(keyframes, frame, element, id);
-
-    // ensure both frames are pointing somewhere
-    if prev == usize::MAX {
-        prev = next;
-    } else if next == usize::MAX {
-        next = prev;
-    }
-
-    // if both are max, then the frame doesn't exist. Fallbackt to init value
-    if prev == usize::MAX && next == usize::MAX {
-        return;
-    }
-
-    let total_frames = keyframes[next].frame - keyframes[prev].frame;
-    let current_frame = frame - keyframes[prev].frame;
+    let total_frames = next_kf.frame - prev_kf.frame;
+    let current_frame = frame as u32 - prev_kf.frame as u32;
 
     let result = interpolate(
-        current_frame,
+        current_frame as u32,
         total_frames,
-        keyframes[prev].value,
-        keyframes[next].value,
-        keyframes[next].start_handle,
-        keyframes[next].end_handle,
+        prev_kf.value,
+        next_kf.value,
+        next_kf.start_handle,
+        next_kf.end_handle,
     );
 
     let z = Vec2::new(0., 0.);
-    *field = interpolate(current_frame, blend_frames, *field, result, z, z);
+    *field = interpolate(current_frame, smooth_frames as u32, *field, result, z, z);
 }
 
 fn interpolate(
