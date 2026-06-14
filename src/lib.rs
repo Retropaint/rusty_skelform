@@ -117,16 +117,52 @@ pub struct Animation {
 
 #[derive(serde::Deserialize, Clone, Debug, Default, PartialEq)]
 #[serde(default)]
-
 pub struct InverseKinematics {
     pub family_id: i32,
     pub constraint: String,
     pub mode: String,
     pub target_id: i32,
     pub bone_ids: Vec<u32>,
+
     pub init_constraint: String,
     pub init_mode: String,
     pub init_mimic_target: bool,
+}
+
+#[derive(serde::Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default)]
+pub struct Visuals {
+    pub tex: String,
+    pub tint: Tint,
+    pub vertices: Vec<Vertex>,
+    pub indices: Vec<u32>,
+    pub binds: Vec<BoneBind>,
+    pub zindex: i32,
+
+    pub init_tex: String,
+    pub init_zindex: i32,
+    pub init_tint: Tint,
+}
+
+#[derive(serde::Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default)]
+pub struct Physics {
+    pub global_pos: Vec2,
+    pub pos_damping: f32,
+    pub pos_ratio: f32,
+
+    pub global_rot: f32,
+    pub global_orbit: f32,
+    pub global_orbit_diff: f32,
+    pub global_orbit_vel: f32,
+    pub rot_damping: f32,
+    pub rot_bounce: f32,
+    pub rot_vel: f32,
+    pub sway: f32,
+
+    pub global_scale: Vec2,
+    pub scale_damping: f32,
+    pub scale_ratio: f32,
 }
 
 #[derive(serde::Deserialize, Clone, Debug, Default, PartialEq)]
@@ -135,45 +171,19 @@ pub struct Bone {
     pub id: u32,
     pub name: String,
     pub parent_id: i32,
-    pub tex: String,
-    pub tint: Tint,
-    pub hidden: bool,
-
-    pub ik_family_id: i32,
-
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u32>,
-    pub binds: Vec<BoneBind>,
-
-    pub phys_global_pos: Vec2,
-    pub phys_pos_damping: f32,
-    pub phys_pos_ratio: f32,
-
-    pub phys_global_rot: f32,
-    pub phys_global_orbit: f32,
-    pub phys_global_orbit_diff: f32,
-    pub phys_global_orbit_vel: f32,
-    pub phys_rot_damping: f32,
-    pub phys_rot_bounce: f32,
-    pub phys_rot_vel: f32,
-    pub phys_sway: f32,
-
-    pub phys_global_scale: Vec2,
-    pub phys_scale_damping: f32,
-    pub phys_scale_ratio: f32,
 
     pub rot: f32,
     pub scale: Vec2,
     pub pos: Vec2,
-    pub zindex: i32,
+    pub hidden: bool,
+
+    pub ik_family_id: i32,
+    pub visuals_id: i32,
+    pub physics_id: i32,
 
     pub init_rot: f32,
     pub init_scale: Vec2,
     pub init_pos: Vec2,
-    pub init_tex: String,
-    pub init_zindex: i32,
-    pub init_tint: Tint,
-
     pub init_hidden: bool,
 }
 
@@ -274,6 +284,8 @@ pub struct Armature {
     pub styles: Vec<Style>,
     pub atlases: Vec<TexAtlas>,
     pub inverse_kinematics: Vec<InverseKinematics>,
+    pub visuals: Vec<Visuals>,
+    pub physics: Vec<Physics>,
 }
 
 #[derive(serde::Deserialize, Clone, Default, Debug, PartialEq)]
@@ -289,6 +301,7 @@ pub struct Texture {
 pub fn animate(
     bones: &mut Vec<Bone>,
     inverse_kinematics: &mut Vec<InverseKinematics>,
+    visuals: &mut Vec<Visuals>,
     anims: &Vec<&Animation>,
     frames: &Vec<u32>,
     blend_frames: &Vec<u32>,
@@ -333,21 +346,36 @@ pub fn animate(
             let bone = &mut bones[kf.bone_id as usize];
             let f = frames[a];
             let bf = blend_frames[a];
+
+            // animate basic fields
             match kf.element.as_str() {
                 "PositionX" => interpolate_keyframes(&mut bone.pos.x, kf, next_kf, f, bf),
                 "PositionY" => interpolate_keyframes(&mut bone.pos.y, kf, next_kf, f, bf),
                 "Rotation" => interpolate_keyframes(&mut bone.rot, kf, next_kf, f, bf),
                 "ScaleX" => interpolate_keyframes(&mut bone.scale.x, kf, next_kf, f, bf),
                 "ScaleY" => interpolate_keyframes(&mut bone.scale.y, kf, next_kf, f, bf),
-                "TintR" => interpolate_keyframes(&mut bone.tint.r, kf, next_kf, f, bf),
-                "TintG" => interpolate_keyframes(&mut bone.tint.g, kf, next_kf, f, bf),
-                "TintB" => interpolate_keyframes(&mut bone.tint.b, kf, next_kf, f, bf),
-                "TintA" => interpolate_keyframes(&mut bone.tint.a, kf, next_kf, f, bf),
-                "IkConstraint" => {
-                    inverse_kinematics[bone.ik_family_id as usize].constraint = kf.value_str.clone()
-                }
                 "Hidden" => bone.hidden = kf.value == 1.,
                 _ => {}
+            }
+
+            // animate visual fields
+            if let Some(visual) = visuals.get_mut(bone.visuals_id as usize) {
+                match kf.element.as_str() {
+                    "TintR" => interpolate_keyframes(&mut visual.tint.r, kf, next_kf, f, bf),
+                    "TintG" => interpolate_keyframes(&mut visual.tint.g, kf, next_kf, f, bf),
+                    "TintB" => interpolate_keyframes(&mut visual.tint.b, kf, next_kf, f, bf),
+                    "TintA" => interpolate_keyframes(&mut visual.tint.a, kf, next_kf, f, bf),
+                    "Tex" => visual.tex = kf.value_str.clone(),
+                    _ => {}
+                }
+            }
+
+            // animate inverse kinematics fields
+            if let Some(ik) = inverse_kinematics.get_mut(bone.ik_family_id as usize) {
+                match kf.element.as_str() {
+                    "IkConstraint" => ik.constraint = kf.value_str.clone(),
+                    _ => {}
+                }
             }
         }
     }
@@ -362,6 +390,8 @@ pub fn animate(
         let z = Vec2::new(0., 0.);
         let sf = blend_frames[0];
         let f = frames[0];
+
+        // reset basic fields
         if !reset.contains(&"PositionX") {
             bone.pos.x = interpolate(f, sf, bone.pos.x, bone.init_pos.x, z, z);
         }
@@ -377,23 +407,32 @@ pub fn animate(
         if !reset.contains(&"ScaleY") {
             bone.scale.y = interpolate(f, sf, bone.scale.y, bone.init_scale.y, z, z);
         }
-        if !reset.contains(&"TintR") {
-            bone.tint.r = interpolate(f, sf, bone.tint.r, bone.init_tint.r, z, z);
-        }
-        if !reset.contains(&"TintG") {
-            bone.tint.g = interpolate(f, sf, bone.tint.g, bone.init_tint.g, z, z);
-        }
-        if !reset.contains(&"TintB") {
-            bone.tint.b = interpolate(f, sf, bone.tint.b, bone.init_tint.b, z, z);
-        }
-        if !reset.contains(&"TintA") {
-            bone.tint.a = interpolate(f, sf, bone.tint.a, bone.init_tint.a, z, z);
-        }
         if !reset.contains(&"Hidden") {
             bone.hidden = bone.init_hidden;
         }
-        if !reset.contains(&"IkConstraint") {
-            if let Some(ik) = inverse_kinematics.get_mut(bone.ik_family_id as usize) {
+
+        // reset visuals data
+        if let Some(visual) = visuals.get_mut(bone.visuals_id as usize) {
+            if !reset.contains(&"Texture") {
+                visual.tex = visual.init_tex.clone();
+            }
+            if !reset.contains(&"TintR") {
+                visual.tint.r = interpolate(f, sf, visual.tint.r, visual.init_tint.r, z, z);
+            }
+            if !reset.contains(&"TintG") {
+                visual.tint.g = interpolate(f, sf, visual.tint.g, visual.init_tint.g, z, z);
+            }
+            if !reset.contains(&"TintB") {
+                visual.tint.b = interpolate(f, sf, visual.tint.b, visual.init_tint.b, z, z);
+            }
+            if !reset.contains(&"TintA") {
+                visual.tint.a = interpolate(f, sf, visual.tint.a, visual.init_tint.a, z, z);
+            }
+        }
+
+        // reset inverse kinematics data
+        if let Some(ik) = inverse_kinematics.get_mut(bone.ik_family_id as usize) {
+            if !reset.contains(&"IkConstraint") {
                 ik.constraint = ik.init_constraint.clone();
             }
         }
@@ -411,7 +450,7 @@ pub fn get_bone_texture(bone_tex: String, styles: &Vec<&Style>) -> Option<Textur
 
 /// Apply child-parent inheritance.
 /// Must be run twice, before and after `inverse_kinematics()`.
-pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<u32, f32>, armature_bones: &Vec<Bone>) {
+pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<u32, f32>, physics: &Vec<Physics>) {
     for b in 0..bones.len() {
         if bones[b].parent_id != -1 {
             let parent = &bones[bones[b].parent_id as usize];
@@ -420,9 +459,12 @@ pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<u32, f32>, armature_b
 
             let mut orbit_rot = bones[bones[b].parent_id as usize].rot;
             // apply orbital difference, if rotation resistance physics is active
-            if armature_bones.len() > 0 && armature_bones[b].phys_sway > 0. {
-                orbit_rot -= armature_bones[b].phys_global_orbit_diff;
+            if let Some(phys) = physics.get(bones[b].physics_id as usize) {
+                if phys.sway > 0. {
+                    orbit_rot -= phys.global_orbit_diff;
+                }
             }
+
             bones[b].rot += orbit_rot;
 
             bones[b].scale *= parent_scale;
@@ -439,15 +481,15 @@ pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<u32, f32>, armature_b
         }
 
         // apply physics, if armature_bones is provided
-        if armature_bones.len() > 0 {
-            if bones[b].phys_rot_damping > 0. {
-                bones[b].rot = armature_bones[b].phys_global_rot;
+        if let Some(phys) = physics.get(bones[b].physics_id as usize) {
+            if phys.rot_damping > 0. {
+                bones[b].rot = phys.global_rot;
             }
-            if bones[b].phys_pos_damping > 0. {
-                bones[b].pos = armature_bones[b].phys_global_pos;
+            if phys.pos_damping > 0. {
+                bones[b].pos = phys.global_pos;
             }
-            if bones[b].phys_scale_damping > 0. {
-                bones[b].scale = armature_bones[b].phys_global_scale;
+            if phys.scale_damping > 0. {
+                bones[b].scale = phys.global_scale;
             }
         }
     }
@@ -463,55 +505,60 @@ pub fn reset_inheritance(constructed_bones: &mut Vec<Bone>, bones: &Vec<Bone>) {
 }
 
 pub fn construct(armature: &mut Armature) {
+    let const_bones = &mut armature.constructed_bones;
+
     // initialize constructed_bones
-    if armature.constructed_bones.len() == 0 {
-        armature.constructed_bones = armature.bones.clone();
+    if const_bones.len() == 0 {
+        *const_bones = armature.bones.clone();
     } else {
-        armature
-            .constructed_bones
-            .sort_by(|a, b| a.id.partial_cmp(&b.id).unwrap());
+        const_bones.sort_by(|a, b| a.id.partial_cmp(&b.id).unwrap());
     }
 
-    // process IK if this file isn't baked
+    // 1st inheritance pass
+    reset_inheritance(const_bones, &armature.bones);
+    inheritance(const_bones, HashMap::new(), &vec![]);
+
+    // 2nd inheritance pass: inverse kinematics
     let mut ik_rots = HashMap::new();
     if !armature.baked_ik && armature.inverse_kinematics.len() > 0 {
-        reset_inheritance(&mut armature.constructed_bones, &armature.bones);
-        inheritance(&mut armature.constructed_bones, HashMap::new(), &vec![]);
-        ik_rots = inverse_kinematics(
-            &mut armature.constructed_bones,
-            &armature.inverse_kinematics,
-        );
+        reset_inheritance(const_bones, &armature.bones);
+        inheritance(const_bones, HashMap::new(), &vec![]);
+        ik_rots = inverse_kinematics(const_bones, &armature.inverse_kinematics);
     }
-    reset_inheritance(&mut armature.constructed_bones, &armature.bones);
-    inheritance(&mut armature.constructed_bones, ik_rots.clone(), &vec![]);
 
-    // simulate physics
-    simulate_physics(&mut armature.bones, &mut armature.constructed_bones);
-    reset_inheritance(&mut armature.constructed_bones, &armature.bones);
-    inheritance(&mut armature.constructed_bones, ik_rots, &armature.bones);
+    // 3rd inheritance pass: physics
+    if armature.physics.len() > 0 {
+        simulate_physics(const_bones, &mut armature.physics);
+        reset_inheritance(const_bones, &armature.bones);
+        inheritance(const_bones, ik_rots, &armature.physics);
+    }
 
     // mesh deformation
-    construct_verts(&mut armature.constructed_bones);
+    construct_verts(const_bones, &mut armature.visuals);
 }
 
-fn simulate_physics(armature_bones: &mut Vec<Bone>, constructed_bones: &mut Vec<Bone>) {
-    for b in 0..armature_bones.len() {
+fn simulate_physics(constructed_bones: &mut Vec<Bone>, physics: &mut Vec<Physics>) {
+    for b in 0..constructed_bones.len() {
+        if constructed_bones[b].physics_id == -1 {
+            continue;
+        }
+        let physics = &mut physics[constructed_bones[b].physics_id as usize];
+
         let s = Vec2::new(0.3, 0.3);
         let e = Vec2::new(0.6, 0.6);
-        let arm_bone = &mut armature_bones[b];
         let const_bone = &constructed_bones[b];
-        let prev_pos = arm_bone.phys_global_pos;
+        let prev_pos = physics.global_pos;
 
         // interpolate position
-        if arm_bone.phys_pos_damping > 0. || arm_bone.phys_sway > 0. {
-            let phys_pos = &mut arm_bone.phys_global_pos;
-            let mut damping = Vec2::new(arm_bone.phys_pos_damping, arm_bone.phys_pos_damping);
+        if physics.pos_damping > 0. || physics.sway > 0. {
+            let phys_pos = &mut physics.global_pos;
+            let mut damping = Vec2::new(physics.pos_damping, physics.pos_damping);
 
             // ratio
-            if arm_bone.phys_pos_ratio < 0. {
-                damping.y *= 1. - arm_bone.phys_pos_ratio.abs();
-            } else if arm_bone.phys_pos_ratio > 0. {
-                damping.x *= 1. - arm_bone.phys_pos_ratio;
+            if physics.pos_ratio < 0. {
+                damping.y *= 1. - physics.pos_ratio.abs();
+            } else if physics.pos_ratio > 0. {
+                damping.x *= 1. - physics.pos_ratio;
             }
 
             phys_pos.x = interpolate(2, damping.x as u32, phys_pos.x, const_bone.pos.x, s, e);
@@ -519,15 +566,15 @@ fn simulate_physics(armature_bones: &mut Vec<Bone>, constructed_bones: &mut Vec<
         }
 
         // interpolate scale
-        if arm_bone.phys_scale_damping > 0. {
-            let phys_scale = &mut arm_bone.phys_global_scale;
-            let mut damping = Vec2::new(arm_bone.phys_scale_damping, arm_bone.phys_scale_damping);
+        if physics.scale_damping > 0. {
+            let phys_scale = &mut physics.global_scale;
+            let mut damping = Vec2::new(physics.scale_damping, physics.scale_damping);
 
             // ratio
-            if arm_bone.phys_scale_ratio < 0. {
-                damping.y *= 1. - arm_bone.phys_scale_ratio.abs();
-            } else if arm_bone.phys_pos_ratio > 0. {
-                damping.x *= 1. - arm_bone.phys_scale_ratio;
+            if physics.scale_ratio < 0. {
+                damping.y *= 1. - physics.scale_ratio.abs();
+            } else if physics.pos_ratio > 0. {
+                damping.x *= 1. - physics.scale_ratio;
             }
 
             phys_scale.x = interpolate(2, damping.x as u32, phys_scale.x, const_bone.scale.x, s, e);
@@ -535,49 +582,55 @@ fn simulate_physics(armature_bones: &mut Vec<Bone>, constructed_bones: &mut Vec<
         }
 
         // interpolate rotation
-        if arm_bone.phys_rot_damping > 0. {
-            let rot = shortest_angle_delta(arm_bone.phys_global_rot, const_bone.rot);
-            arm_bone.phys_global_rot += rot / arm_bone.phys_rot_damping;
+        if physics.rot_damping > 0. {
+            let rot = shortest_angle_delta(physics.global_rot, const_bone.rot);
+            physics.global_rot += rot / physics.rot_damping;
         }
 
         // interpolate parent orbit (rot res, bounce, etc)
         let bones = &constructed_bones;
         let parent = bones.iter().find(|b| b.id == const_bone.parent_id as u32);
-        if arm_bone.phys_sway > 0. && parent != None {
+        if physics.sway > 0. && parent != None {
             // interpolate to the angle difference between bone and parent
             let diff = normalize(const_bone.pos - parent.unwrap().pos);
             let diff_angle = diff.y.atan2(diff.x);
-            let mut orbit_buffer = shortest_angle_delta(arm_bone.phys_global_orbit, diff_angle);
+            let mut orbit_buffer = shortest_angle_delta(physics.global_orbit, diff_angle);
             // apply bounce
-            if arm_bone.phys_rot_bounce > 0. && arm_bone.phys_rot_bounce <= 1. {
-                orbit_buffer += arm_bone.phys_global_orbit_vel / (2. - arm_bone.phys_rot_bounce);
-                arm_bone.phys_global_orbit_vel = orbit_buffer;
+            if physics.rot_bounce > 0. && physics.rot_bounce <= 1. {
+                orbit_buffer += physics.global_orbit_vel / (2. - physics.rot_bounce);
+                physics.global_orbit_vel = orbit_buffer;
             }
-            arm_bone.phys_global_orbit += orbit_buffer / 10.;
+            physics.global_orbit += orbit_buffer / 10.;
 
             // swing orbit based on position momentum
-            let vel = normalize(arm_bone.phys_global_pos - prev_pos);
+            let vel = normalize(physics.global_pos - prev_pos);
             let angle = (-vel.y).atan2(-vel.x);
-            let vel_rot = shortest_angle_delta(arm_bone.phys_global_orbit, angle);
-            let strength = magnitude(arm_bone.phys_global_pos - prev_pos) / 1000.;
-            arm_bone.phys_global_orbit += vel_rot * strength * arm_bone.phys_sway;
+            let vel_rot = shortest_angle_delta(physics.global_orbit, angle);
+            let strength = magnitude(physics.global_pos - prev_pos) / 1000.;
+            physics.global_orbit += vel_rot * strength * physics.sway;
 
-            arm_bone.phys_global_orbit_diff = diff_angle - arm_bone.phys_global_orbit;
+            physics.global_orbit_diff = diff_angle - physics.global_orbit;
         }
     }
 }
 
-pub fn construct_verts(bones: &mut Vec<Bone>) {
+pub fn construct_verts(bones: &mut Vec<Bone>, visuals: &mut Vec<Visuals>) {
     for b in 0..bones.len() {
-        // move vertex to main bone.
-        // this will be overridden if vertex has a bind.
-        for v in 0..bones[b].vertices.len() {
-            bones[b].vertices[v].pos = bones[b].vertices[v].init_pos;
-            bones[b].vertices[v].pos = inherit_vert(bones[b].vertices[v].pos, &bones[b]);
+        if bones[b].visuals_id == -1 {
+            continue;
         }
 
-        for bi in 0..bones[b].binds.len() {
-            let b_id = bones[b].binds[bi].bone_id;
+        let visual = &mut visuals[bones[b].visuals_id as usize];
+
+        // move vertex to main bone.
+        // this will be overridden if vertex has a bind.
+        for v in 0..visual.vertices.len() {
+            visual.vertices[v].pos = visual.vertices[v].init_pos;
+            visual.vertices[v].pos = inherit_vert(visual.vertices[v].pos, &bones[b]);
+        }
+
+        for bi in 0..visual.binds.len() {
+            let b_id = visual.binds[bi].bone_id;
             if b_id == -1 {
                 continue;
             }
@@ -586,15 +639,15 @@ pub fn construct_verts(bones: &mut Vec<Bone>) {
                 .find(|bone| bone.id == b_id as u32)
                 .unwrap()
                 .clone();
-            for v in 0..bones[b].binds[bi].verts.len() {
-                let vert_id = bones[b].binds[bi].verts[v].id as usize;
+            for v in 0..visual.binds[bi].verts.len() {
+                let vert_id = visual.binds[bi].verts[v].id as usize;
 
-                if !bones[b].binds[bi].is_path {
+                if !visual.binds[bi].is_path {
                     // weights
-                    let weight = bones[b].binds[bi].verts[v].weight;
-                    let end_pos = inherit_vert(bones[b].vertices[vert_id].init_pos, &bind_bone)
-                        - bones[b].vertices[vert_id].pos;
-                    bones[b].vertices[vert_id].pos += end_pos * weight;
+                    let weight = visual.binds[bi].verts[v].weight;
+                    let end_pos = inherit_vert(visual.vertices[vert_id].init_pos, &bind_bone)
+                        - visual.vertices[vert_id].pos;
+                    visual.vertices[vert_id].pos += end_pos * weight;
                     continue;
                 }
 
@@ -603,7 +656,7 @@ pub fn construct_verts(bones: &mut Vec<Bone>) {
                 // Vertices will follow along this path.
 
                 // get previous and next bone
-                let binds = &bones[b].binds;
+                let binds = &visual.binds;
                 let prev = if bi > 0 { bi - 1 } else { bi };
                 let next = (bi + 1).min(binds.len() - 1);
                 let prev_bone = bones
@@ -622,14 +675,13 @@ pub fn construct_verts(bones: &mut Vec<Bone>) {
                 let normal_angle = average.y.atan2(average.x);
 
                 // move vertex to bind bone, then just adjust it to 'bounce' off the line's surface
-                bones[b].vertices[vert_id].pos =
-                    bones[b].vertices[vert_id].init_pos + bind_bone.pos;
+                visual.vertices[vert_id].pos = visual.vertices[vert_id].init_pos + bind_bone.pos;
                 let rotated = rotate(
-                    &(bones[b].vertices[vert_id].pos - bind_bone.pos),
+                    &(visual.vertices[vert_id].pos - bind_bone.pos),
                     normal_angle,
                 );
-                bones[b].vertices[vert_id].pos =
-                    bind_bone.pos + (rotated * bones[b].binds[bi].verts[v].weight);
+                visual.vertices[vert_id].pos =
+                    bind_bone.pos + (rotated * visual.binds[bi].verts[v].weight);
             }
         }
     }
