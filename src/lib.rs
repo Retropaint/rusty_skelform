@@ -123,6 +123,7 @@ pub struct InverseKinematics {
     pub mode: String,
     pub target_id: i32,
     pub bone_ids: Vec<u32>,
+    pub mimic_target: bool,
 
     pub init_constraint: String,
     pub init_mode: String,
@@ -374,6 +375,7 @@ pub fn animate(
             if let Some(ik) = inverse_kinematics.get_mut(bone.ik_family_id as usize) {
                 match kf.element.as_str() {
                     "IkConstraint" => ik.constraint = kf.value_str.clone(),
+                    "MimicTarget" => ik.mimic_target = kf.value == 1.,
                     _ => {}
                 }
             }
@@ -434,6 +436,9 @@ pub fn animate(
         if let Some(ik) = inverse_kinematics.get_mut(bone.ik_family_id as usize) {
             if !reset.contains(&"IkConstraint") {
                 ik.constraint = ik.init_constraint.clone();
+            }
+            if !reset.contains(&"MimicTarget") {
+                ik.mimic_target = ik.init_mimic_target.clone();
             }
         }
     }
