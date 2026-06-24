@@ -139,6 +139,9 @@ pub struct Visuals {
     pub indices: Vec<u32>,
     pub binds: Vec<BoneBind>,
     pub zindex: i32,
+    pub pivot_pos: Vec2,
+    pub pivot_rot: f32,
+    pub pivot_scale: Vec2,
 
     pub init_tex: String,
     pub init_zindex: i32,
@@ -300,12 +303,14 @@ pub struct Texture {
 
 /// Process bones with animations.
 pub fn animate(
+    // these are imported separately from Armature for borrow reasons
     bones: &mut Vec<Bone>,
     inverse_kinematics: &mut Vec<InverseKinematics>,
     visuals: &mut Vec<Visuals>,
+
     anims: &Vec<&Animation>,
     frames: &Vec<u32>,
-    blend_frames: &Vec<u32>,
+    smooth_frames: &Vec<u32>,
 ) {
     // keeps track of animated elements. Bone elements not included will be reset
     let mut reset_map: HashMap<u32, Vec<&str>> = HashMap::new();
@@ -346,7 +351,7 @@ pub fn animate(
 
             let bone = &mut bones[kf.bone_id as usize];
             let f = frames[a];
-            let bf = blend_frames[a];
+            let bf = smooth_frames[a];
 
             // animate basic fields
             match kf.element.as_str() {
@@ -390,7 +395,7 @@ pub fn animate(
         }
 
         let z = Vec2::new(0., 0.);
-        let sf = blend_frames[0];
+        let sf = smooth_frames[0];
         let f = frames[0];
 
         // reset basic fields
@@ -631,7 +636,12 @@ pub fn construct_verts(bones: &mut Vec<Bone>, visuals: &mut Vec<Visuals>) {
         // this will be overridden if vertex has a bind.
         for v in 0..visual.vertices.len() {
             visual.vertices[v].pos = visual.vertices[v].init_pos;
-            visual.vertices[v].pos = inherit_vert(visual.vertices[v].pos, &bones[b]);
+            visual.vertices[v].pos = inherit_vert(
+                visual.vertices[v].pos,
+                &bones[b],
+                visual.pivot_rot,
+                visual.pivot_scale,
+            );
         }
 
         for bi in 0..visual.binds.len() {
@@ -650,8 +660,10 @@ pub fn construct_verts(bones: &mut Vec<Bone>, visuals: &mut Vec<Visuals>) {
                 if !visual.binds[bi].is_path {
                     // weights
                     let weight = visual.binds[bi].verts[v].weight;
-                    let end_pos = inherit_vert(visual.vertices[vert_id].init_pos, &bind_bone)
-                        - visual.vertices[vert_id].pos;
+                    let init_pos = visual.vertices[vert_id].init_pos;
+                    let end_pos =
+                        inherit_vert(init_pos, &bind_bone, visual.pivot_rot, visual.pivot_scale)
+                            - visual.vertices[vert_id].pos;
                     visual.vertices[vert_id].pos += end_pos * weight;
                     continue;
                 }
@@ -692,9 +704,9 @@ pub fn construct_verts(bones: &mut Vec<Bone>, visuals: &mut Vec<Visuals>) {
     }
 }
 
-pub fn inherit_vert(mut pos: Vec2, bone: &Bone) -> Vec2 {
-    pos *= bone.scale;
-    pos = rotate(&pos, bone.rot);
+pub fn inherit_vert(mut pos: Vec2, bone: &Bone, pivot_rot: f32, pivot_scale: Vec2) -> Vec2 {
+    pos *= bone.scale * pivot_scale;
+    pos = rotate(&pos, bone.rot + pivot_rot);
     pos += bone.pos;
     pos
 }
@@ -828,10 +840,14 @@ pub fn point_bones(bones: &mut Vec<Bone>, family: &InverseKinematics) {
     let end_bone = &bones[*family.bone_ids.last().unwrap() as usize];
     let mut tip_pos = end_bone.pos;
     for i in (0..family.bone_ids.len()).rev() {
+        let target_rot = bones[family.target_id as usize].rot;
+        let bone = &mut bones[family.bone_ids[i] as usize];
         if i == family.bone_ids.len() - 1 {
+            if family.mimic_target {
+                bone.rot = target_rot;
+            }
             continue;
         }
-        let bone = &mut bones[family.bone_ids[i] as usize];
 
         let dir = tip_pos - bone.pos;
         bone.rot = dir.y.atan2(dir.x);
