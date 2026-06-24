@@ -481,7 +481,7 @@ pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<u32, f32>, physics: &
             bones[b].pos *= parent_scale;
 
             // orbit the parent
-            bones[b].pos = rotate(&bones[b].pos, orbit_rot);
+            bones[b].pos = rotate_vec2(&bones[b].pos, orbit_rot);
 
             bones[b].pos += parent_pos;
         }
@@ -693,7 +693,7 @@ pub fn construct_verts(bones: &mut Vec<Bone>, visuals: &mut Vec<Visuals>) {
 
                 // move vertex to bind bone, then just adjust it to 'bounce' off the line's surface
                 visual.vertices[vert_id].pos = visual.vertices[vert_id].init_pos + bind_bone.pos;
-                let rotated = rotate(
+                let rotated = rotate_vec2(
                     &(visual.vertices[vert_id].pos - bind_bone.pos),
                     normal_angle,
                 );
@@ -706,7 +706,7 @@ pub fn construct_verts(bones: &mut Vec<Bone>, visuals: &mut Vec<Visuals>) {
 
 pub fn inherit_vert(mut pos: Vec2, bone: &Bone, pivot_rot: f32, pivot_scale: Vec2) -> Vec2 {
     pos *= bone.scale * pivot_scale;
-    pos = rotate(&pos, bone.rot + pivot_rot);
+    pos = rotate_vec2(&pos, bone.rot + pivot_rot);
     pos += bone.pos;
     pos
 }
@@ -723,7 +723,7 @@ fn normalize(vec: Vec2) -> Vec2 {
     Vec2::new(vec.x / mag, vec.y / mag)
 }
 
-fn rotate(point: &Vec2, rot: f32) -> Vec2 {
+pub fn rotate_vec2(point: &Vec2, rot: f32) -> Vec2 {
     Vec2 {
         x: point.x * rot.cos() - point.y * rot.sin(),
         y: point.x * rot.sin() + point.y * rot.cos(),
@@ -731,7 +731,7 @@ fn rotate(point: &Vec2, rot: f32) -> Vec2 {
 }
 
 /// Interpolate an f32 value from the specified keyframe data.
-pub fn interpolate_keyframes(
+fn interpolate_keyframes(
     field: &mut f32,
     prev_kf: &Keyframe,
     next_kf: &Keyframe,
@@ -923,7 +923,7 @@ pub fn arc_ik(bones: &mut Vec<&mut Bone>, root: Vec2, target: Vec2) {
             root.y + (1. - peak) * (dist[b] * 3.14).sin() * base_mag,
         );
 
-        let rotated = rotate(&(bones[b].pos - root), base_angle);
+        let rotated = rotate_vec2(&(bones[b].pos - root), base_angle);
         bones[b].pos = rotated + root;
     }
 }
