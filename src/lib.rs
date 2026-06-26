@@ -636,12 +636,7 @@ pub fn construct_verts(bones: &mut Vec<Bone>, visuals: &mut Vec<Visuals>) {
         // this will be overridden if vertex has a bind.
         for v in 0..visual.vertices.len() {
             visual.vertices[v].pos = visual.vertices[v].init_pos;
-            visual.vertices[v].pos = inherit_vert(
-                visual.vertices[v].pos,
-                &bones[b],
-                visual.pivot_rot,
-                visual.pivot_scale,
-            );
+            visual.vertices[v].pos = inherit_vert(visual.vertices[v].pos, &bones[b], &visual);
         }
 
         for bi in 0..visual.binds.len() {
@@ -662,8 +657,7 @@ pub fn construct_verts(bones: &mut Vec<Bone>, visuals: &mut Vec<Visuals>) {
                     let weight = visual.binds[bi].verts[v].weight;
                     let init_pos = visual.vertices[vert_id].init_pos;
                     let end_pos =
-                        inherit_vert(init_pos, &bind_bone, visual.pivot_rot, visual.pivot_scale)
-                            - visual.vertices[vert_id].pos;
+                        inherit_vert(init_pos, &bind_bone, &visual) - visual.vertices[vert_id].pos;
                     visual.vertices[vert_id].pos += end_pos * weight;
                     continue;
                 }
@@ -704,9 +698,9 @@ pub fn construct_verts(bones: &mut Vec<Bone>, visuals: &mut Vec<Visuals>) {
     }
 }
 
-pub fn inherit_vert(mut pos: Vec2, bone: &Bone, pivot_rot: f32, pivot_scale: Vec2) -> Vec2 {
-    pos *= bone.scale * pivot_scale;
-    pos = rotate_vec2(&pos, bone.rot + pivot_rot);
+pub fn inherit_vert(mut pos: Vec2, bone: &Bone, visuals: &Visuals) -> Vec2 {
+    pos *= bone.scale * visuals.pivot_scale;
+    pos = rotate_vec2(&pos, bone.rot + visuals.pivot_rot);
     pos += bone.pos;
     pos
 }
@@ -952,13 +946,10 @@ pub fn time_frame(time: Instant, animation: &Animation, reverse: bool, is_loop: 
     frame
 }
 
-/// Flips the bone if either if its scale is negative.
-pub fn check_flip(bone: &mut Bone, scale: Vec2) {
+pub fn is_facing_left(scale: Vec2) -> bool {
     let both = scale.x < 0. && scale.y < 0.;
     let either = scale.x < 0. || scale.y < 0.;
-    if either && !both {
-        bone.rot = -bone.rot;
-    }
+    either && !both
 }
 
 pub fn shortest_angle_delta(from: f32, to: f32) -> f32 {
