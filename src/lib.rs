@@ -1,4 +1,4 @@
-use std::{collections::HashMap, time::Instant};
+use std::collections::HashMap;
 
 #[repr(C)]
 #[derive(serde::Deserialize, Clone, Debug, PartialEq)]
@@ -936,6 +936,10 @@ pub fn format_frame(mut frame: u32, animation: &Animation, reverse: bool, is_loo
     frame
 }
 
+#[cfg(not(feature = "web"))]
+use std::time::Instant;
+
+#[cfg(not(feature = "web"))]
 pub fn time_frame(time: Instant, animation: &Animation, reverse: bool, is_loop: bool) -> u32 {
     let elapsed = time.elapsed().as_millis() as f32 / 1e3 as f32;
     let frametime = 1. / animation.fps as f32;
