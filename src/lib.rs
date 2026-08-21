@@ -134,6 +134,7 @@ pub struct InverseKinematics {
 #[serde(default)]
 pub struct Visuals {
     pub tex: String,
+    #[serde(default = "default_tint")]
     pub tint: Tint,
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
@@ -145,6 +146,7 @@ pub struct Visuals {
 
     pub init_tex: String,
     pub init_zindex: i32,
+    #[serde(default = "default_tint")]
     pub init_tint: Tint,
 }
 
@@ -967,4 +969,13 @@ pub fn shortest_angle_delta(from: f32, to: f32) -> f32 {
         delta += tau;
     }
     delta
+}
+
+fn default_tint() -> Tint {
+    Tint {
+        r: 1.,
+        g: 1.,
+        b: 1.,
+        a: 1.,
+    }
 }
