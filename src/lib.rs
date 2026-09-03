@@ -477,6 +477,10 @@ pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<u32, f32>, physics: &
                 }
             }
 
+            if is_facing_left(parent.scale) {
+                bones[b].rot = -bones[b].rot;
+            }
+
             bones[b].rot += orbit_rot;
 
             bones[b].scale *= parent_scale;
@@ -547,6 +551,21 @@ pub fn construct(armature: &mut Armature) {
 
     // mesh deformation
     construct_verts(const_bones, &mut armature.visuals);
+
+    propagate_hidden(const_bones);
+}
+
+pub fn propagate_hidden(bones: &mut Vec<Bone>) {
+    let mut hiddens = vec![false; bones.len()];
+    for bone in bones {
+        // save this bone's hidden status so it can be propagated to its children,
+        // and ignore rendering if it's hidden
+        let is_parent_hidden = bone.parent_id != -1 && hiddens[bone.parent_id as usize];
+        if bone.hidden || is_parent_hidden {
+            hiddens[bone.id as usize] = true;
+            bone.hidden = true;
+        }
+    }
 }
 
 fn simulate_physics(constructed_bones: &mut Vec<Bone>, physics: &mut Vec<Physics>) {
@@ -823,6 +842,9 @@ pub fn inverse_kinematics(
         apply_constraints(bones, &family);
         for b in 0..family.bone_ids.len() {
             if b == family.bone_ids.len() - 1 {
+                if family.mimic_target {
+                    ik_rot.insert(family.bone_ids[b], bones[family.target_id as usize].rot);
+                }
                 continue;
             }
             ik_rot.insert(family.bone_ids[b], bones[family.bone_ids[b] as usize].rot);
@@ -836,12 +858,8 @@ pub fn point_bones(bones: &mut Vec<Bone>, family: &InverseKinematics) {
     let end_bone = &bones[*family.bone_ids.last().unwrap() as usize];
     let mut tip_pos = end_bone.pos;
     for i in (0..family.bone_ids.len()).rev() {
-        let target_rot = bones[family.target_id as usize].rot;
         let bone = &mut bones[family.bone_ids[i] as usize];
         if i == family.bone_ids.len() - 1 {
-            if family.mimic_target {
-                bone.rot = target_rot;
-            }
             continue;
         }
 
