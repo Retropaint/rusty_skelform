@@ -225,7 +225,7 @@ pub enum AnimElement {
 #[serde(default)]
 pub struct Keyframe {
     pub frame: u32,
-    pub bone_id: u32,
+    pub bone_name: String,
     pub element: String,
     pub value: f32,
     pub next_kf: i32,
@@ -315,7 +315,7 @@ pub fn animate(
     smooth_frames: &Vec<u32>,
 ) {
     // keeps track of animated elements. Bone elements not included will be reset
-    let mut reset_map: HashMap<u32, Vec<&str>> = HashMap::new();
+    let mut reset_map: HashMap<String, Vec<&str>> = HashMap::new();
 
     for a in 0..anims.len() {
         for k in 0..anims[a].keyframes.len() {
@@ -323,12 +323,12 @@ pub fn animate(
 
             // add this keyframe bone and element, to be used later
             let mut new: Vec<&str> = vec![];
-            if let Some(reset) = reset_map.get(&kf.bone_id) {
+            if let Some(reset) = reset_map.get(&kf.bone_name) {
                 new = reset.clone();
             }
             if !new.contains(&kf.element.as_str()) {
                 new.push(kf.element.as_str());
-                reset_map.insert(kf.bone_id, new);
+                reset_map.insert(kf.bone_name.clone(), new);
             }
 
             // skip animation if current keyframes are beyond this frame
@@ -351,7 +351,13 @@ pub fn animate(
                 continue;
             }
 
-            let bone = &mut bones[kf.bone_id as usize];
+            // get bone by name
+            let bone = bones.iter_mut().find(|bone| bone.name == kf.bone_name);
+            if bone == None {
+                continue;
+            }
+            let bone = bone.unwrap();
+
             let f = frames[a];
             let bf = smooth_frames[a];
 
@@ -392,7 +398,7 @@ pub fn animate(
     // reset non-animated bone elements
     for bone in bones {
         let mut reset: &Vec<&str> = &vec![];
-        if let Some(this_reset) = reset_map.get(&bone.id) {
+        if let Some(this_reset) = reset_map.get(&bone.name) {
             reset = this_reset;
         }
 
@@ -517,6 +523,7 @@ pub fn reset_inheritance(constructed_bones: &mut Vec<Bone>, bones: &Vec<Bone>) {
         constructed_bones[b].pos = bones[b].pos;
         constructed_bones[b].rot = bones[b].rot;
         constructed_bones[b].scale = bones[b].scale;
+        constructed_bones[b].hidden = bones[b].hidden;
     }
 }
 
