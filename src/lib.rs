@@ -496,9 +496,13 @@ pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<u32, f32>, physics: &
             // angles.
             let cos = bones[b].rot.cos();
             let sin = bones[b].rot.sin();
+            let dir = Vec2::new(
+                if parent_scale.x > 0. { 1. } else { -1. },
+                if parent_scale.y > 0. { 1. } else { -1. },
+            );
             let inherited_scale = Vec2::new(
-                ((parent_scale.x * cos).powi(2) + (parent_scale.y * sin).powi(2)).sqrt(),
-                ((parent_scale.x * sin).powi(2) + (parent_scale.y * cos).powi(2)).sqrt(),
+                ((parent_scale.x * cos).powi(2) + (parent_scale.y * sin).powi(2)).sqrt() * dir.x,
+                ((parent_scale.x * sin).powi(2) + (parent_scale.y * cos).powi(2)).sqrt() * dir.y,
             );
             bones[b].scale *= inherited_scale;
 
