@@ -487,9 +487,23 @@ pub fn inheritance(bones: &mut Vec<Bone>, ik_rots: HashMap<u32, f32>, physics: &
                 bones[b].rot = -bones[b].rot;
             }
 
+            // scale this bone by its parent with respect to its initial rotation
+            //
+            // eg; if parent is widened and this bone is at 90 deg, its height should be
+            // increased rather than its width.
+            //
+            // distnace formula (sqrt of a^2 + b^2) is used to counter elongation in diagonal
+            // angles.
+            let cos = bones[b].rot.cos();
+            let sin = bones[b].rot.sin();
+            let inherited_scale = Vec2::new(
+                ((parent_scale.x * cos).powi(2) + (parent_scale.y * sin).powi(2)).sqrt(),
+                ((parent_scale.x * sin).powi(2) + (parent_scale.y * cos).powi(2)).sqrt(),
+            );
+            bones[b].scale *= inherited_scale;
+
             bones[b].rot += orbit_rot;
 
-            bones[b].scale *= parent_scale;
             bones[b].pos *= parent_scale;
 
             // orbit the parent
